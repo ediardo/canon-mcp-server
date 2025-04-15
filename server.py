@@ -9,6 +9,7 @@ import logging
 from urllib.parse import urljoin
 from pprint import pprint
 from dotenv import load_dotenv
+import time
 
 # Configure logging
 logging.basicConfig(
@@ -84,6 +85,8 @@ def make_request(ip, port, path='', use_https=True):
         logger.debug(f"Response Status Code: {response.status_code}")
         logger.debug("Response Headers: %s", dict(response.headers))
         
+        print(response)
+        print("zxczx")
         try:
             return response.json()
         except json.JSONDecodeError:
@@ -183,7 +186,7 @@ def list_directory_contents(ip, port, path, use_https=True):
         logger.error(f"Error making request to {url}: {str(e)}")
         return None
 
-def get_directory_contents(ip, port, storage, directory, use_https=True, file_type=None, kind=None, order=None, page=None):
+def get_directory_contents(ip, port, storage, directory, use_https=True, file_type="jpeg", kind="list", order=None, page=None):
     """Get list of contents in a specific directory.
     
     Args:
@@ -227,7 +230,12 @@ def get_directory_contents(ip, port, storage, directory, use_https=True, file_ty
         
         logger.info(f"Requesting directory contents: {url}")
         logger.debug(f"Requesting directory contents from: {url} with params: {params}")
-        print(params)
+        
+        # Build full URL with params for copying
+        from urllib.parse import urlencode
+        full_url = f"{url}?{urlencode(params)}" if params else url
+        print(f"\nFull URL: {full_url}\n")
+        
         if use_https:
             requests.packages.urllib3.disable_warnings()
             response = requests.get(url, params=params, timeout=5, verify=False)
@@ -342,6 +350,128 @@ def get_battery_info(ip, port, use_https=True):
         logger.error(f"Error making request to {url}: {str(e)}")
         return None
 
+def ping_host(ip, port, use_https=True, count=0):
+    """Continuously check if the host is reachable.
+    
+    Args:
+        ip: Camera IP address
+        port: Camera port
+        use_https: Whether to use HTTPS
+        count: Number of times to ping (0 means infinite)
+        
+    Returns:
+        None
+        
+    Example:
+        >>> ping_host('192.168.1.206', 8080, count=3)
+        Pinging 192.168.1.206:8080...
+        Reply from 192.168.1.206:8080: Success
+        Reply from 192.168.1.206:8080: Success
+        Reply from 192.168.1.206:8080: Success
+    """
+    try:
+        i = 0
+        while True:
+            if count > 0 and i >= count:
+                break
+                
+            is_reachable = check_host_reachable(ip, port, use_https)
+            status = "Success" if is_reachable else "Failed"
+            print(f"Reply from {ip}:{port}: {status}")
+            
+            if not is_reachable:
+                break
+                
+            i += 1
+            time.sleep(1)  # Wait 1 second between pings
+            
+    except KeyboardInterrupt:
+        print("\nPing interrupted by user")
+    except Exception as e:
+        logger.error(f"Error during ping: {str(e)}")
+
+def download_images(ip, port, last_n, output_path=None, use_https=True, kind='thumbnail', file_type='jpeg'):
+    """Download the last N images from the camera.
+    
+    Args:
+        ip: Camera IP address
+        port: Camera port
+        last_n: Number of most recent images to download
+        output_path: Directory where to save the images. If not provided, saves in current directory.
+        use_https: Whether to use HTTPS
+        kind: Type of image to download (e.g., 'jpeg', 'raw'). Defaults to 'jpeg'.
+        file_type: Target file format (e.g., 'jpeg', 'raw'). Defaults to 'jpeg'.
+        
+    Returns:
+        dict: Information about downloaded files or error message
+        
+    Example:
+        >>> download_images('192.168.1.206', 8080, 5, '~/Downloads', kind='jpeg', file_type='jpeg')
+        {'downloaded': ['IMG_3086.JPG', 'IMG_3087.JPG', ...], 'total': 5}
+    """
+    try:
+        # Get list of storages
+        storages = list_contents(ip, port, use_https)
+        if not storages or 'path' not in storages:
+            return {'error': 'No storage found'}
+            
+        # Get the first storage (usually card1)
+        storage = storages['path'][0].split('/')[-1]
+        
+        # Get list of directories in the storage
+        directories = list_directory_contents(ip, port, storage, use_https)
+        if not directories or 'path' not in directories:
+            return {'error': 'No directories found'}
+            
+        # Get the most recent directory (usually the last one)
+        recent_dir = directories['path'][-1].split('/')[-1]
+        
+     
+        # Get list of files in the directory
+        pages = get_last_directory_contents_page(ip, port, storage, recent_dir, use_https)
+        if not pages or 'contentsnumber' not in pages:
+            return {'error': 'No files found'}
+        last_page = pages['pagenumber']
+        total_files = pages['contentsnumber']
+        files_per_page = 100
+        
+        files = get_directory_contents(ip, port, storage, recent_dir, use_https, kind="list", page=last_page)
+        if not files or 'path' not in files:
+            return {'error': 'No files found :('}
+        
+            
+        # Filter for image files and get the last N
+        image_files = [f.split('/')[-1] for f in files['path'] if f.lower().endswith(('.jpg', '.jpeg', '.cr2', '.cr3'))]
+        image_files = image_files[-last_n:]  # Get the last N images
+        
+        # Create output directory if it doesn't exist
+        if output_path:
+            os.makedirs(output_path, exist_ok=True)
+        else:
+            output_path = os.getcwd()
+            
+        downloaded_files = []
+        for file in image_files:
+            # Get the file contents
+            response = get_contents(ip, port, storage, recent_dir, file, use_https, kind=kind)
+            if response and response.status_code == 200:
+                # Save the file
+                result = save_contents(response, os.path.join(output_path, file))
+                if 'saved_to' in result:
+                    downloaded_files.append(file)
+                    
+        return {
+            'downloaded': downloaded_files,
+            'total': len(downloaded_files),
+            'output_path': output_path,
+            'kind': kind,
+            'file_type': file_type
+        }
+            
+    except Exception as e:
+        logger.error(f"Error downloading images: {str(e)}")
+        return {'error': str(e)}
+
 def save_contents(response, output_path=None):
     """Save the contents of a response to a file.
     
@@ -396,6 +526,33 @@ def save_contents(response, output_path=None):
         logger.error(f"Error parsing JSON response: {str(e)}")
         return {'raw_response': response.text}
 
+def get_last_directory_contents_page(ip, port, storage, directory, use_https=True):
+    """Get the last page of directory contents.
+    
+    Args:
+        ip: Camera IP address
+        port: Camera port
+        storage: Storage name (e.g., 'card1')
+        directory: Directory name (e.g., '101CANON')
+        
+    Returns:
+        dict: The JSON response containing the last page of directory contents or None if request failed
+    
+    Example:
+        >>> get_last_directory_contents_page('192.168.1.206', 8080, 'card1', '101CANON')
+        {"contentsnumber": 835, "pagenumber": 9 }
+    """
+    try:
+        # Hardcoded version
+        pages = get_directory_contents(ip, port, storage, directory, use_https, kind="number")
+        return pages
+    except Exception as e:
+        logger.error(f"Error getting last directory contents page: {str(e)}")
+        return None
+        
+        
+
+        
 def print_response(response):
     """Pretty print the response.
     
@@ -407,7 +564,10 @@ def print_response(response):
         return
         
     logger.info("\nResponse:")
-    pprint(response)
+    if isinstance(response, dict):
+        print(json.dumps(response, indent=2))
+    else:
+        pprint(json.dumps(response, indent=2))
 
 def main():
     # Get default values from environment variables
@@ -473,6 +633,21 @@ def main():
                                          parents=[common_parser],
                                          help='Get battery information from the camera')
     
+    # Download command
+    download_parser = subparsers.add_parser('download', aliases=['d'],
+                                          parents=[common_parser],
+                                          help='Download the last N images from the camera')
+    download_parser.add_argument('--last-n', type=int, required=True, help='Number of most recent images to download')
+    download_parser.add_argument('--output-path', '-o', help='Directory where to save the images. If not provided, saves in current directory.')
+    download_parser.add_argument('--kind', help='Type of image to download (e.g., jpeg, raw). Defaults to jpeg.')
+    download_parser.add_argument('--type', help='Target file format (e.g., jpeg, raw). Defaults to jpeg.')
+    
+    # Ping command
+    ping_parser = subparsers.add_parser('ping', aliases=['p'],
+                                      parents=[common_parser],
+                                      help='Continuously check if the host is reachable')
+    ping_parser.add_argument('-c', '--count', type=int, default=0, help='Number of times to ping (0 means infinite)')
+    
     args = parser.parse_args()
     
     if args.debug:
@@ -525,6 +700,13 @@ def main():
         logger.info(f"Getting battery information from {args.ip}:{args.port} using {'HTTPS' if args.https else 'HTTP'}...")
         response = get_battery_info(args.ip, args.port, args.https)
         print_response(response)
+    elif args.command in ['download', 'd']:
+        logger.info(f"Downloading the last {args.last_n} images from {args.ip}:{args.port} using {'HTTPS' if args.https else 'HTTP'}...")
+        response = download_images(args.ip, args.port, args.last_n, args.output_path, args.https, args.kind, args.type)
+        print_response(response)
+    elif args.command in ['ping', 'p']:
+        logger.info(f"Pinging {args.ip}:{args.port} using {'HTTPS' if args.https else 'HTTP'}...")
+        ping_host(args.ip, args.port, args.https, args.count)
 
 if __name__ == '__main__':
     main() 
