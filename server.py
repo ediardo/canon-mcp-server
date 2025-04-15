@@ -234,8 +234,7 @@ def get_directory_contents(ip, port, storage, directory, use_https=True, file_ty
         # Build full URL with params for copying
         from urllib.parse import urlencode
         full_url = f"{url}?{urlencode(params)}" if params else url
-        print(f"\nFull URL: {full_url}\n")
-        
+        logger.info(f"Full URL: {full_url}")
         if use_https:
             requests.packages.urllib3.disable_warnings()
             response = requests.get(url, params=params, timeout=5, verify=False)
@@ -574,6 +573,7 @@ def main():
     default_ip = os.getenv('DEFAULT_IP', '127.0.0.1')
     default_port = int(os.getenv('DEFAULT_PORT', '8080'))
     default_https = os.getenv('DEFAULT_HTTPS', 'false').lower() == 'true'
+    default_log_level = os.getenv('DEFAULT_LOG_LEVEL', 'INFO').upper()
 
     parser = argparse.ArgumentParser(description='Server connection and request tool')
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
@@ -583,7 +583,9 @@ def main():
     common_parser.add_argument('--ip', default=default_ip, help=f'IP address to connect to (default: {default_ip})')
     common_parser.add_argument('--port', type=int, default=default_port, help=f'Port number to connect to (default: {default_port})')
     common_parser.add_argument('--https', action='store_true', default=default_https, help=f'Use HTTPS protocol (default: {default_https})')
-    common_parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+    common_parser.add_argument('--log-level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL', 
+                                                     'debug', 'info', 'warning', 'error', 'critical'], 
+                             default=default_log_level, help='Set the logging level (default: INFO)')
     
     # Check connection command
     check_parser = subparsers.add_parser('check-connection', aliases=['cc'], 
@@ -650,8 +652,19 @@ def main():
     
     args = parser.parse_args()
     
-    if args.debug:
+    # Convert log level to uppercase
+    log_level = args.log_level.upper()
+    
+    if log_level == 'DEBUG':
         logger.setLevel(logging.DEBUG)
+    elif log_level == 'INFO':
+        logger.setLevel(logging.INFO)
+    elif log_level == 'WARNING':
+        logger.setLevel(logging.WARNING)
+    elif log_level == 'ERROR':
+        logger.setLevel(logging.ERROR)
+    elif log_level == 'CRITICAL':
+        logger.setLevel(logging.CRITICAL)
     
     if not args.command:
         parser.print_help()
