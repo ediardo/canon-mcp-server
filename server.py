@@ -21,6 +21,14 @@ logger = logging.getLogger(__name__)
 # Load environment variables from .env file
 load_dotenv()
 
+# Get default values from environment variables
+DEFAULT_IP = os.getenv('DEFAULT_IP', '127.0.0.1')
+DEFAULT_PORT = int(os.getenv('DEFAULT_PORT', '8080'))
+DEFAULT_HTTPS = os.getenv('DEFAULT_HTTPS', 'false').lower() == 'true'
+DEFAULT_LOG_LEVEL = os.getenv('DEFAULT_LOG_LEVEL', 'INFO').upper()
+DEFAULT_CONFIG_DIR = os.path.abspath(os.getenv('DEFAULT_CONFIG_DIR', os.path.expanduser('.canon/')))
+
+print(DEFAULT_CONFIG_DIR)
 def compose_url(ip, port, path='', use_https=True):
     """Compose a complete URL from components."""
     protocol = 'https' if use_https else 'http'
@@ -389,6 +397,72 @@ def ping_host(ip, port, use_https=True, count=0):
     except Exception as e:
         logger.error(f"Error during ping: {str(e)}")
 
+def get_image_index(filename):
+    """Extract the index/number part from an image filename.
+    
+    Args:
+        filename: Image filename (e.g., 'IMG_4502.JPG', 'DSC_1234.CR3')
+        
+    Returns:
+        int: The index number from the filename, or None if no number found
+        
+    Example:
+        >>> get_image_index('IMG_4502.JPG')
+        4502
+        >>> get_image_index('DSC_1234.CR3')
+        1234
+        >>> get_image_index('invalid.jpg')
+        None
+    """
+    try:
+        # Remove file extension
+        name = os.path.splitext(filename)[0]
+        
+        # Find the last underscore and get the number after it
+        parts = name.split('_')
+        if len(parts) > 1:
+            number = parts[-1]
+            if number.isdigit():
+                return int(number)
+                
+        return None
+    except Exception as e:
+        logger.error(f"Error extracting image index: {str(e)}")
+        return None
+
+def store_last_image_index(index, output_path=None):
+    """Store the last downloaded image index in a text file.
+    
+    Args:
+        index: The index number to store
+        output_path: Directory where to save the index file. If not provided, saves in DEFAULT_CONFIG_DIR.
+        
+    Returns:
+        str: Path to the index file
+        
+    Example:
+        >>> store_last_image_index(4502)
+        '~/.config/canon/last_image_index.txt'
+    """
+    try:
+        # Use DEFAULT_CONFIG_DIR if no output path is provided
+        if output_path is None:
+            output_path = DEFAULT_CONFIG_DIR
+            
+        # Create the directory if it doesn't exist
+        os.makedirs(output_path, exist_ok=True)
+        print(output_path)
+        index_file = os.path.join(output_path, 'last_image_index.txt')
+            
+        with open(index_file, 'w') as f:
+            f.write(str(index))
+            
+        logger.info(f"Stored last image index {index} in {index_file}")
+        return index_file
+    except Exception as e:
+        logger.error(f"Error storing last image index: {str(e)}")
+        return None
+
 def download_images(ip, port, last_n, output_path=None, use_https=True, kind='thumbnail', file_type='jpeg'):
     """Download the last N images from the camera.
     
@@ -425,7 +499,6 @@ def download_images(ip, port, last_n, output_path=None, use_https=True, kind='th
         # Get the most recent directory (usually the last one)
         recent_dir = directories['path'][-1].split('/')[-1]
         
-     
         # Get list of files in the directory
         pages = get_last_directory_contents_page(ip, port, storage, recent_dir, use_https)
         if not pages or 'contentsnumber' not in pages:
@@ -437,7 +510,6 @@ def download_images(ip, port, last_n, output_path=None, use_https=True, kind='th
         files = get_directory_contents(ip, port, storage, recent_dir, use_https, kind="list", page=last_page)
         if not files or 'path' not in files:
             return {'error': 'No files found :('}
-        
             
         # Filter for image files and get the last N
         image_files = [f.split('/')[-1] for f in files['path'] if f.lower().endswith(('.jpg', '.jpeg', '.cr2', '.cr3'))]
@@ -450,6 +522,7 @@ def download_images(ip, port, last_n, output_path=None, use_https=True, kind='th
             output_path = os.getcwd()
             
         downloaded_files = []
+        last_index = None
         for file in image_files:
             # Get the file contents
             response = get_contents(ip, port, storage, recent_dir, file, use_https, kind=kind)
@@ -458,13 +531,25 @@ def download_images(ip, port, last_n, output_path=None, use_https=True, kind='th
                 result = save_contents(response, os.path.join(output_path, file))
                 if 'saved_to' in result:
                     downloaded_files.append(file)
+                    # Update last index
+                    current_index = get_image_index(file)
+                    if current_index is not None:
+                        last_index = current_index
+        
+        # Store the last image index
+        if last_index is not None:
+            index_file = store_last_image_index(last_index)
+        else:
+            index_file = None
                     
         return {
             'downloaded': downloaded_files,
             'total': len(downloaded_files),
             'output_path': output_path,
             'kind': kind,
-            'file_type': file_type
+            'file_type': file_type,
+            'last_index': last_index,
+            'index_file': index_file
         }
             
     except Exception as e:
@@ -548,10 +633,7 @@ def get_last_directory_contents_page(ip, port, storage, directory, use_https=Tru
     except Exception as e:
         logger.error(f"Error getting last directory contents page: {str(e)}")
         return None
-        
-        
 
-        
 def print_response(response):
     """Pretty print the response.
     
@@ -567,6 +649,117 @@ def print_response(response):
         print(json.dumps(response, indent=2))
     else:
         pprint(json.dumps(response, indent=2))
+
+def sync_images(ip, port, output_path=None, use_https=True, kind='thumbnail', file_type='jpeg', frequency=60):
+    """Continuously monitor and download new images from the camera.
+    
+    Args:
+        ip: Camera IP address
+        port: Camera port
+        output_path: Directory where to save the images. If not provided, saves in current directory.
+        use_https: Whether to use HTTPS
+        kind: Type of image to download (e.g., 'jpeg', 'raw'). Defaults to 'jpeg'.
+        file_type: Target file format (e.g., 'jpeg', 'raw'). Defaults to 'jpeg'.
+        frequency: How often to check for new images in seconds. Defaults to 60.
+        
+    Returns:
+        None
+    """
+    try:
+        # Create output directory if it doesn't exist
+        if output_path:
+            os.makedirs(output_path, exist_ok=True)
+        else:
+            output_path = os.getcwd()
+            
+        # Get the last downloaded image index
+        index_file = os.path.join(DEFAULT_CONFIG_DIR, 'last_image_index.txt')
+        last_index = 0
+        if os.path.exists(index_file):
+            try:
+                with open(index_file, 'r') as f:
+                    last_index = int(f.read().strip())
+            except (ValueError, IOError) as e:
+                logger.error(f"Error reading last image index: {str(e)}")
+                last_index = 0
+                
+        logger.info(f"Starting sync with last index: {last_index}")
+        
+        while True:
+            try:
+                # Get list of storages
+                storages = list_contents(ip, port, use_https)
+                if not storages or 'path' not in storages:
+                    logger.error("No storage found")
+                    time.sleep(frequency)
+                    continue
+                    
+                # Get the first storage (usually card1)
+                storage = storages['path'][0].split('/')[-1]
+                
+                # Get list of directories in the storage
+                directories = list_directory_contents(ip, port, storage, use_https)
+                if not directories or 'path' not in directories:
+                    logger.error("No directories found")
+                    time.sleep(frequency)
+                    continue
+                    
+                # Get the most recent directory (usually the last one)
+                recent_dir = directories['path'][-1].split('/')[-1]
+                
+                # Get list of files in the directory
+                pages = get_last_directory_contents_page(ip, port, storage, recent_dir, use_https)
+                if not pages or 'contentsnumber' not in pages:
+                    logger.error("No files found")
+                    time.sleep(frequency)
+                    continue
+                    
+                last_page = pages['pagenumber']
+                files = get_directory_contents(ip, port, storage, recent_dir, use_https, kind="list", page=last_page)
+                if not files or 'path' not in files:
+                    logger.error("No files found")
+                    time.sleep(frequency)
+                    continue
+                    
+                # Filter for image files and get those with index greater than last_index
+                image_files = []
+                for f in files['path']:
+                    filename = f.split('/')[-1]
+                    if filename.lower().endswith(('.jpg', '.jpeg', '.cr2', '.cr3')):
+                        current_index = get_image_index(filename)
+                        if current_index is not None and current_index > last_index:
+                            image_files.append(filename)
+                            
+                if image_files:
+                    logger.info(f"Found {len(image_files)} new images to download")
+                    downloaded_files = []
+                    for file in image_files:
+                        # Get the file contents
+                        response = get_contents(ip, port, storage, recent_dir, file, use_https, kind=kind)
+                        if response and response.status_code == 200:
+                            # Save the file
+                            result = save_contents(response, os.path.join(output_path, file))
+                            if 'saved_to' in result:
+                                downloaded_files.append(file)
+                                # Update last index
+                                current_index = get_image_index(file)
+                                if current_index is not None:
+                                    last_index = current_index
+                                    store_last_image_index(last_index)
+                                    
+                    logger.info(f"Downloaded {len(downloaded_files)} new images")
+                else:
+                    logger.debug("No new images found")
+                    
+            except Exception as e:
+                logger.error(f"Error during sync: {str(e)}")
+                
+            time.sleep(frequency)
+            
+    except KeyboardInterrupt:
+        logger.info("Sync interrupted by user")
+    except Exception as e:
+        logger.error(f"Fatal error during sync: {str(e)}")
 
 def main():
     # Get default values from environment variables
@@ -650,6 +843,15 @@ def main():
                                       help='Continuously check if the host is reachable')
     ping_parser.add_argument('-c', '--count', type=int, default=0, help='Number of times to ping (0 means infinite)')
     
+    # Sync command
+    sync_parser = subparsers.add_parser('sync', aliases=['s'],
+                                      parents=[common_parser],
+                                      help='Continuously monitor and download new images from the camera')
+    sync_parser.add_argument('--output-path', '-o', help='Directory where to save the images. If not provided, saves in current directory.')
+    sync_parser.add_argument('--kind', help='Type of image to download (e.g., jpeg, raw). Defaults to jpeg.')
+    sync_parser.add_argument('--type', help='Target file format (e.g., jpeg, raw). Defaults to jpeg.')
+    sync_parser.add_argument('--frequency', type=int, default=60, help='How often to check for new images in seconds. Defaults to 60.')
+    
     args = parser.parse_args()
     
     # Convert log level to uppercase
@@ -720,6 +922,9 @@ def main():
     elif args.command in ['ping', 'p']:
         logger.info(f"Pinging {args.ip}:{args.port} using {'HTTPS' if args.https else 'HTTP'}...")
         ping_host(args.ip, args.port, args.https, args.count)
+    elif args.command in ['sync', 's']:
+        logger.info(f"Starting sync with {args.ip}:{args.port} using {'HTTPS' if args.https else 'HTTP'}...")
+        sync_images(args.ip, args.port, args.output_path, args.https, args.kind, args.type, args.frequency)
 
 if __name__ == '__main__':
     main() 

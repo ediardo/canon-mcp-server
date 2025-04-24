@@ -1,0 +1,39 @@
+{
+  "name": "canon-cli-ts",
+  "version": "1.0.0",
+  "description": "TypeScript client for Canon CCAPI",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "ts-node server.ts",
+    "lint": "eslint . --ext .ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "canon",
+    "ccapi",
+    "camera",
+    "cli"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@types/node-fetch": "^2.6.12",
+    "axios": "^1.7.2",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "expo-media-library": "^17.0.6",
+    "node-fetch": "^3.3.2",
+    "winston": "^3.17.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.30",
+    "@types/winston": "^2.4.4",
+    "@typescript-eslint/eslint-plugin": "^7.16.0",
+    "@typescript-eslint/parser": "^7.16.0",
+    "eslint": "^8.57.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.3"
+  }
+}

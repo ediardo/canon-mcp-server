@@ -3,3 +3,6 @@
 .venv
 
 xfer
+
+node_modules/
+dist/
