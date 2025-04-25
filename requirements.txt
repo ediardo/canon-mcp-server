@@ -1,4 +1,8 @@
 requests>=2.31.0
 python-dotenv>=1.0.0
 flask>=2.0.0
-watchdog>=2.1.0 
+watchdog>=2.1.0
+pyaudio>=0.2.13
+pynput>=1.7.6
+wave>=0.0.2
+openai-whisper>=20231117 

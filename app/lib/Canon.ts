@@ -243,6 +243,10 @@ export class Canon extends Camera {
         return response.json();
     }
 
+    /**
+     * Stream the event monitoring data
+     * @returns 
+     */
     async getEventMonitoring(): Promise<any> {
         const url = this.getFeatureUrl('event/monitoring');
 
@@ -470,6 +474,7 @@ export class Canon extends Camera {
     }
 
     async startLiveView() {
+        console.debug('startLiveView');
         const endpoint = this.getFeatureUrl('shooting/liveview');
 
         if (!endpoint) {
@@ -479,7 +484,7 @@ export class Canon extends Camera {
         const response = await fetch(endpoint.path, {
             method: 'POST',
             body: JSON.stringify({
-                liveviewsize: 'small',
+                liveviewsize: 'medium',
                 cameradisplay: 'on',
             }),
         });
@@ -506,70 +511,120 @@ export class Canon extends Camera {
         return response.json();
     }
 
-    async flipDetail(savePath?: string): Promise<{info?: ArrayBuffer, image?: ArrayBuffer}> {
-        const endpoint = this.getFeatureUrl('shooting/liveview/scrolldetail');
+    async flipDetail(kind: string = 'info'): Promise<{info?: any, image?: ArrayBuffer}> {
+        console.debug('flipDetail', kind);
+        const endpoint = this.getFeatureUrl('shooting/liveview/flipdetail');
 
         if (!endpoint) {
+            console.error('Flip detail feature not found');
             throw new Error('Flip detail feature not found');
         }
 
         const url = new URL(endpoint.path);
-        const kind = 'info'
         url.searchParams.append('kind', kind);
-        const response = await fetch(url.toString(), {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/octet-stream' },
-        });
-        const result: { info?: ArrayBuffer, image?: ArrayBuffer } = {};
-
-        // Process binary response
-        const buffer = await response.arrayBuffer();
-        const data = new Uint8Array(buffer);
-        console.log(data);
-        let pos = 0;
-
-        while (pos < data.length) {
-            // Look for marker: 0xFF followed by 0x00
-            if (data[pos] === 0xFF && pos + 1 < data.length && data[pos + 1] === 0x00) {
-                pos += 2;
-
-                if (pos >= data.length) break;
-
-                // Get type (0x00 = image, 0x01 = info)
-                const type = data[pos];
-                pos++;
-
-                if (pos + 4 >= data.length) break;
-
-                // Get data length (4 bytes, big-endian)
-                const length = (data[pos] << 24) | (data[pos+1] << 16) | (data[pos+2] << 8) | data[pos+3];
-                pos += 4;
-
-                if (pos + length > data.length) break;
-
-                // Extract the data bytes
-                const chunk = data.slice(pos, pos + length);
-
-                // Store in appropriate result field
-                if (type === 0x00) {
-                    result.image = chunk.buffer;
-                } else if (type === 0x01) {
-                    result.info = chunk.buffer;
-                }
-
-                pos += length;
-
-                // Skip terminating 0xFF 0xFF
-                if (pos + 2 <= data.length && data[pos] === 0xFF && data[pos + 1] === 0xFF) {
-                    pos += 2;
-                }
-            } else {
-                pos++;
+        
+        try {
+            const response = await fetch(url.toString(), {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/octet-stream' },
+            });
+            
+            // Use streaming approach to keep connection open
+            const reader = response.body?.getReader();
+            if (!reader) {
+                throw new Error('Response body reader not available');
             }
+
+            const result: { info?: any, image?: ArrayBuffer } = {};
+            let buffer = new Uint8Array(0);
+            
+            console.log('Starting to stream live view data...');
+            
+            // Keep reading chunks indefinitely to maintain the connection
+            while (true) {
+                const { done, value } = await reader.read();
+                
+                if (done) {
+                    console.log('Stream closed by server');
+                    break;
+                }
+                
+                if (!value || value.length === 0) {
+                    continue;
+                }
+                
+                console.log(`Received chunk of ${value.length} bytes`);
+                
+                // Append the new chunk to our buffer
+                const newBuffer = new Uint8Array(buffer.length + value.length);
+                newBuffer.set(buffer);
+                newBuffer.set(value, buffer.length);
+                buffer = newBuffer;
+                
+                // Process all complete frames in the buffer
+                let pos = 0;
+                while (pos < buffer.length - 1) {
+                    // Find start marker 0xFF,0x00
+                    if (buffer[pos] === 0xFF && buffer[pos + 1] === 0x00) {
+                        // Need at least 7 bytes: marker(2) + type(1) + length(4)
+                        if (pos + 6 >= buffer.length) break;
+                        
+                        pos += 2; // Skip marker
+                        
+                        // Get type (0x00 for image, 0x01 for info)
+                        const type = buffer[pos];
+                        pos++;
+                        
+                        // Get data length (4 bytes, big-endian)
+                        const length = (buffer[pos] << 24) | (buffer[pos + 1] << 16) | 
+                                      (buffer[pos + 2] << 8) | buffer[pos + 3];
+                        pos += 4;
+                        
+                        // Check if we have enough data to extract the full frame
+                        if (pos + length + 2 > buffer.length) {
+                            pos = pos - 7; // Reset position to before this frame
+                            break;  // Wait for more data
+                        }
+                        
+                        // Extract data based on type
+                        if (type === 0x00) { // Image data
+                            console.log('Found image data with length', length);
+                            const imageData = buffer.slice(pos, pos + length);
+                            result.image = imageData.buffer.slice(imageData.byteOffset, imageData.byteOffset + imageData.byteLength);
+                        } else if (type === 0x01) { // Info data
+                            console.log('Found info data with length', length);
+                            const infoData = buffer.slice(pos, pos + length);
+                            const text = new TextDecoder().decode(infoData);
+                            try {
+                                result.info = JSON.parse(text);
+                                console.log('Parsed info:', result.info);
+                            } catch (e) {
+                                console.error('Failed to parse info JSON:', e);
+                            }
+                        }
+                        
+                        pos += length;
+                        
+                        // Check for end marker 0xFF,0xFF
+                        if (pos + 1 < buffer.length && buffer[pos] === 0xFF && buffer[pos + 1] === 0xFF) {
+                            pos += 2;  // Skip end marker
+                        }
+                    } else {
+                        pos++;
+                    }
+                }
+                
+                // Remove processed data from buffer
+                if (pos > 0) {
+                    buffer = buffer.slice(pos);
+                }
+            }
+            
+            return result;
+        } catch (error) {
+            console.error('Error in flipDetail:', error);
+            throw error;
         }
-
-
-        return result;
     }
 
     private getFeatureUrl(feature: string): ApiEndpoint | undefined {
@@ -597,7 +652,15 @@ async function main() {
     const ipAddress = '10.0.0.241';
     const canon = new Canon(ipAddress, 8080, false);
     await canon.connect();
+    // const eventPolling = await canon.getEventPolling();
+    // console.log(eventPolling);
+
+
+    // await canon.getEventMonitoring();
+    //await canon.startLiveView();
     await canon.sync(undefined, 5);
+
+    
 }
 
 main();
