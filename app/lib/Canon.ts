@@ -47,6 +47,32 @@ interface CanonDeviceStatusBattery {
     level: string;
 }
 
+interface CanonLiveViewFlipDetailResponse {
+    info: {
+        liveviewdata: {
+            histogram: number[][];
+            afframe: any[];
+            image: {
+                positionx: number;
+                positiony: number;
+                positionwidth: number;
+                positionheight: number;
+                sizex: number;
+                sizey: number;
+            };
+            visible: any;
+            zoom: any;
+            diorama: any;
+            systemtime: any;
+        };
+        angleinformation: {
+            cameraposture: number;
+            rolling: number;
+            pitching: number;
+        };
+    };
+}
+
 enum CanonContentType {
     ALL = 'all',
     JPEG = 'jpeg',
@@ -123,14 +149,16 @@ export class Canon extends Camera {
             this.serialNumber = deviceInformation.serialnumber;
             this.firmwareVersion = deviceInformation.firmwareversion;
             this.macAddress = deviceInformation.macaddress;
-            const { contentsNumber, pageNumber } = await this.getContentsNumber(this.currentDirectory!.path);
-            this.contentsNumber = contentsNumber;
-            this.pageNumber = pageNumber;
-            this.lastPageContents = await this.getLastPageContents();
-            console.log(`Canon[${this.ipAddress}:${this.port}]: Current directory: ${this.currentDirectory!.path}`);
-            console.log(`Canon[${this.ipAddress}:${this.port}]: Contents number: ${this.contentsNumber}`);
-            console.log(`Canon[${this.ipAddress}:${this.port}]: Page number: ${this.pageNumber}`);
+            // const { contentsNumber, pageNumber } = await this.getContentsNumber(this.currentDirectory!.path);
+            // this.contentsNumber = contentsNumber;
+            // this.pageNumber = pageNumber;
+            // this.lastPageContents = await this.getLastPageContents();
+            // console.log(`Canon[${this.ipAddress}:${this.port}]: Current directory: ${this.currentDirectory!.path}`);
+            // console.log(`Canon[${this.ipAddress}:${this.port}]: Contents number: ${this.contentsNumber}`);
+            // console.log(`Canon[${this.ipAddress}:${this.port}]: Page number: ${this.pageNumber}`);
             console.log(`Canon[${this.ipAddress}:${this.port}]: Device Name: ${this.modelName}`);
+
+            return true;
         } catch (error) {
             console.error(`Canon[${this.ipAddress}:${this.port}]: Connection failed for ${this.baseUrl}:`, error);
             throw error;
@@ -381,7 +409,7 @@ export class Canon extends Camera {
         return response.json();
     }
 
-    async sync(callback?: (any: any) => void, frequency: number = 5) {
+    async sync(callback?: (any?: any) => void, frequency: number = 5) {
         console.log(`Canon[${this.ipAddress}:${this.port}]: Syncing with frequency ${frequency} seconds`);
         this.isSyncActive = true;
 
@@ -389,27 +417,12 @@ export class Canon extends Camera {
             console.log('Waiting for', frequency, 'seconds');
 
             // Wait for the specified frequency in seconds
-            await new Promise((resolve) => setTimeout(resolve, frequency * 1000));
             // If sync was cancelled during the wait, exit the loop
             if (!this.isSyncActive) break;
 
-            // const { contentsNumber, pageNumber } = await this.getContentsNumber(this.currentDirectory!.path);
+            callback && callback();            
+            await new Promise((resolve) => setTimeout(resolve, frequency * 1000));
 
-            // if (this.contentsNumber !== contentsNumber || this.pageNumber !== pageNumber) {
-            //     this.contentsNumber = contentsNumber;
-            //     this.pageNumber = pageNumber;
-            //     const lastPageContents = await this.getLastPageContents();
-            //     const images = await this.downloadImages(lastPageContents);
-            //     callback(images)
-            // }
-
-            // const eventMonitoring = await this.getEventMonitoring();
-            // console.log(eventMonitoring);
-            // const eventPolling = await this.getEventPolling();
-            // console.log(eventPolling);
-
-            const flipDetail = await this.flipDetail();
-            console.log(flipDetail);
         }
 
         console.log(`Canon[${this.ipAddress}:${this.port}]: Sync process stopped`);
@@ -538,7 +551,6 @@ export class Canon extends Camera {
             const result: { info?: any, image?: ArrayBuffer } = {};
             let buffer = new Uint8Array(0);
             
-            console.log('Starting to stream live view data...');
             
             // Keep reading chunks indefinitely to maintain the connection
             while (true) {
@@ -552,9 +564,7 @@ export class Canon extends Camera {
                 if (!value || value.length === 0) {
                     continue;
                 }
-                
-                console.log(`Received chunk of ${value.length} bytes`);
-                
+                                
                 // Append the new chunk to our buffer
                 const newBuffer = new Uint8Array(buffer.length + value.length);
                 newBuffer.set(buffer);
@@ -657,10 +667,34 @@ async function main() {
 
 
     // await canon.getEventMonitoring();
-    //await canon.startLiveView();
-    await canon.sync(undefined, 5);
+    await canon.startLiveView();
+
+    // async function callback() {
+    //     const flipDetail = await canon.flipDetail('info');
+    //     if (flipDetail.image) {
+    //         // Save the image buffer to a file
+    //         const fs = require('fs');
+    //         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    //         const filename = `liveview-${timestamp}.jpg`;
+    //         fs.writeFileSync(filename, Buffer.from(flipDetail.image));
+    //         console.log(`Saved image to ${filename}`);
+    //     }
+    //     if (flipDetail.info) {
+    //         const fs = require('fs');
+    //         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    //         const filename = `info-${timestamp}.json`;
+    //         fs.writeFileSync(filename, JSON.stringify(flipDetail.info, null, 2));
+    //         console.log(`Saved info to ${filename}`);
+    //     }
+    // }
+
+    async function callback() {
+        const eventPolling = await canon.getEventPolling();
+        console.log(eventPolling);
+    }
+    await canon.sync(callback, 10);
 
     
 }
 
-main();
+//main();

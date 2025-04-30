@@ -11,11 +11,15 @@ const db = drizzle(expo);
 
 import NetInfo from "@react-native-community/netinfo";
 
+const DEFAULT_IP = "10.0.0.241"
+const DEFAULT_PORT = "8080"
+
 export default function Index() {
-  const [ipAddress, setIpAddress] = useState("192.168.1.70");
-  const [port, setPort] = useState("8080");
+  const [ipAddress, setIpAddress] = useState(DEFAULT_IP);
+  const [port, setPort] = useState(DEFAULT_PORT);
   const [isHttps, setIsHttps] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
   const [currentIp, setCurrentIp] = useState("");
   const [syncFrequency, setSyncFrequency] = useState("10");
   const canonRef = useRef<Canon | null>(null);
@@ -172,13 +176,22 @@ export default function Index() {
       console.log(`Attempting to connect to Canon camera at ${ipAddress}:${portNumber} using ${isHttps ? 'HTTPS' : 'HTTP'}...`);
       
       // Connect to the camera
-      await canon.connect(); 
+      const connected = await canon.connect();
+      if (!connected) {
+        throw new Error("Failed to connect to the camera");
+      }
       
+      setIsConnected(true);
       console.log("Connection successful. Starting sync...");
       Alert.alert("Success", `Connected successfully to ${canon.modelName}`);
 
       // Start syncing every N seconds, passing the save function as a callback
-      await canon.sync(saveImagesToPhone, frequencySeconds);
+        async function callback() {
+          const eventPolling = await canon.getEventPolling();
+          console.log(eventPolling);
+      }
+
+      await canon.sync(callback, frequencySeconds);
 
     } catch (error: any) {
       console.error("Connection or sync failed:", error);
@@ -186,6 +199,7 @@ export default function Index() {
     } finally {
       // Reset states when connection ends (either completed or failed)
       setIsLoading(false);
+      setIsConnected(false);
       canonRef.current = null;
     }
   };
@@ -196,6 +210,7 @@ export default function Index() {
       canonRef.current.cancelSync();
       canonRef.current = null;
       setIsLoading(false);
+      setIsConnected(false);
       Alert.alert("Cancelled", "Connection process has been cancelled");
     }
   };
@@ -284,13 +299,15 @@ export default function Index() {
       )}
 
       <View style={{ flexDirection: "row", justifyContent: "space-around", width: "100%" }}>
-        <Button
-          title={isLoading ? "Connecting..." : "Connect"}
-          onPress={handleConnect}
-          disabled={isLoading}
-        />
+        { !isConnected && (
+          <Button
+            title={isLoading ? "Connecting..." : "Connect"}
+            onPress={handleConnect}
+            disabled={isLoading || isConnected}
+          />
+        )}
         
-        {isLoading && (
+        {isConnected && (
           <Button
             title="Cancel"
             onPress={handleCancel}
