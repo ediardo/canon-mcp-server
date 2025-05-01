@@ -95,6 +95,22 @@ enum CanonVersion {
     VER130 = 'ver130',
     VER140 = 'ver140',
 }
+
+export enum CanonShootingMode {
+    MANUAL = 'm',
+    APERTURE_PRIORITY = 'av',
+    SHUTTER_PRIORITY = 'tv',
+    PROGRAM_AE = 'p',
+    FLEXIBLE_PRIORITY = 'fv',
+    SCENE_INTELLIGENT_AUTO = 'a+',
+    CUSTOM_MODE_3 = 'c3',
+    CUSTOM_MODE_2 = 'c2',
+    CUSTOM_MODE_1 = 'c1',
+    BULB = 'bulb',
+}
+
+const DELAY_AFTER_SHUTTER_BUTTON = 500;
+
 export class Canon extends Camera {
     baseUrl: string;
     ipAddress: string;
@@ -111,7 +127,11 @@ export class Canon extends Camera {
     currentDirectory?: CanonContent;
     lastPageContents?: CanonContents;
     isSyncActive: boolean = false;
-
+    shootingMode?: string;
+    ignoreShootingModeDial: boolean = false;
+    shootingSettings?: any;
+    apertureSetting?: string;
+    shutterSpeedSetting?: string;
     constructor(ipAddress: string, port: number = 443, https: boolean, username?: string, password?: string) {
         super();
         this.ipAddress = ipAddress;
@@ -122,7 +142,7 @@ export class Canon extends Camera {
         this.baseUrl = `${this.https ? 'https' : 'http'}://${this.ipAddress}:${this.port}`;
     }
 
-    async connect() {
+    async connect(): Promise<any> {
         const headers = new Headers();
 
         try {
@@ -140,13 +160,22 @@ export class Canon extends Camera {
 
             this.currentDirectory = await this.getCurrentDirectory();
             const deviceInformation = await this.getDeviceInformation();
+            this.shootingSettings = await this.getShootingSettings();
             this.manufacturer = deviceInformation.manufacturer;
             this.modelName = deviceInformation.productname;
             this.serialNumber = deviceInformation.serialnumber;
             this.firmwareVersion = deviceInformation.firmwareversion;
             this.macAddress = deviceInformation.macaddress;
 
-            return true;
+            return {
+                currentDirectory: this.currentDirectory,
+                shootingSettings: this.shootingSettings,
+                manufacturer: this.manufacturer,
+                modelName: this.modelName,
+                serialNumber: this.serialNumber,
+                firmwareVersion: this.firmwareVersion,
+                macAddress: this.macAddress,
+            };
         } catch (error) {
             throw error;
         }
@@ -157,8 +186,7 @@ export class Canon extends Camera {
             const base64Images: string[] = [];
 
             await this.shutterbutton();
-            // wait for 1 second
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise((resolve) => setTimeout(resolve, DELAY_AFTER_SHUTTER_BUTTON));
             const events = await this.getEventPolling();
             if (events && events.addedcontents) {
                 for (const content of events.addedcontents) {
@@ -283,7 +311,7 @@ export class Canon extends Camera {
 
     /**
      * Stream the event monitoring data
-     * @returns 
+     * @returns
      */
     async getEventMonitoring(): Promise<any> {
         const url = this.getFeatureUrl('event/monitoring');
@@ -304,41 +332,41 @@ export class Canon extends Camera {
 
         // Process chunks as they arrive
         while (true) {
-            const {done, value} = await reader.read();
-            
+            const { done, value } = await reader.read();
+
             if (done) {
                 break;
             }
 
             // value is a Uint8Array containing the chunk data
-            if (value) {                
+            if (value) {
                 // Parse the binary data
                 let pos = 0;
                 while (pos < value.length) {
                     // Look for start marker: 0xFF followed by 0x00
-                    if (value[pos] === 0xFF && pos + 1 < value.length && value[pos + 1] === 0x00) {
+                    if (value[pos] === 0xff && pos + 1 < value.length && value[pos + 1] === 0x00) {
                         // Found marker, move past it
                         pos += 2;
-                        
+
                         if (pos >= value.length) break;
-                        
+
                         // Get type
                         const type = value[pos];
                         pos++;
-                        
+
                         if (pos + 4 >= value.length) break;
-                        
+
                         // Get data length (4 bytes, big-endian)
-                        const length = (value[pos] << 24) | (value[pos+1] << 16) | (value[pos+2] << 8) | value[pos+3];
+                        const length =
+                            (value[pos] << 24) | (value[pos + 1] << 16) | (value[pos + 2] << 8) | value[pos + 3];
                         pos += 4;
-                        
+
                         if (pos + length > value.length) break;
-                        
+
                         // Extract the data bytes and convert to string
                         const dataBytes = value.slice(pos, pos + length);
                         const dataText = new TextDecoder().decode(dataBytes);
-                        
-                        
+
                         if (type === 0x02) {
                             try {
                                 const jsonData = JSON.parse(dataText);
@@ -346,7 +374,7 @@ export class Canon extends Camera {
                                 continue;
                             }
                         }
-                        
+
                         pos += length;
                     } else {
                         // Not a marker, skip to next byte
@@ -369,7 +397,7 @@ export class Canon extends Camera {
         const fullUrl = new URL(url.path);
 
         if (url.version === CanonVersion.VER100) {
-            const timemout = "immediate";
+            const timemout = 'immediate';
             fullUrl.searchParams.append('timeout', timemout);
         }
         //console.log(fullUrl.toString());
@@ -421,7 +449,7 @@ export class Canon extends Camera {
         while (this.isSyncActive) {
             if (!this.isSyncActive) break;
 
-            callback && callback();            
+            callback && callback();
             await new Promise((resolve) => setTimeout(resolve, frequency * 1000));
         }
     }
@@ -525,8 +553,8 @@ export class Canon extends Camera {
         }
 
         const body = {
-            'af': true
-        }
+            af: true,
+        };
 
         try {
             const response = await fetch(endpoint.path, {
@@ -536,7 +564,6 @@ export class Canon extends Camera {
 
             return response.json();
         } catch (error) {
-
             if (error instanceof Response) {
                 const status = error.status;
                 return { status };
@@ -544,7 +571,166 @@ export class Canon extends Camera {
             throw error;
         }
     }
-    async flipDetail(kind: string = 'info'): Promise<{info?: any, image?: ArrayBuffer}> {
+
+    async getApertureSetting(): Promise<any> {
+        const endpoint = this.getFeatureUrl('shooting/settings/av');
+
+        if (!endpoint) {
+            throw new Error('Aperture setting feature not found');
+        }
+
+        const response = await fetch(endpoint.path);
+
+        return response.json();
+    }
+
+    async setApertureSetting(value: string): Promise<any> {
+        const endpoint = this.getFeatureUrl('shooting/settings/av');
+
+        if (!endpoint) {
+            throw new Error('Aperture setting feature not found');
+        }
+
+        const body = {
+            value,
+        };
+
+        const response = await fetch(endpoint.path, { method: 'PUT', body: JSON.stringify(body) });
+
+        return response.json();
+    }
+
+    async getShutterSpeedSetting(): Promise<any> {
+        const endpoint = this.getFeatureUrl('shooting/settings/tv');
+
+        if (!endpoint) {
+            throw new Error('Shutter speed setting feature not found');
+        }
+
+        const response = await fetch(endpoint.path);
+
+        const data = await response.json();
+
+        this.shutterSpeedSetting = data.value;
+
+        return this.shutterSpeedSetting;
+    }
+
+    async setShutterSpeedSetting(value: string): Promise<any> {
+        const endpoint = this.getFeatureUrl('shooting/settings/tv');
+
+        if (!endpoint) {
+            throw new Error('Shutter speed setting feature not found');
+        }
+
+        const body = {
+            value,
+        };
+
+        try {
+            const response = await fetch(endpoint.path, { method: 'PUT', body: JSON.stringify(body) });
+            this.shutterSpeedSetting = value;
+            return response.json();
+        } catch (error) {
+            throw error;
+        }
+    }
+
+
+    async getShootingSettings(): Promise<any> {
+        const endpoint = this.getFeatureUrl('shooting/settings');
+
+        if (!endpoint) {
+            throw new Error('Shooting settings feature not found');
+        }
+
+        const response = await fetch(endpoint.path);
+
+        const data = await response.json();
+
+        this.shootingSettings = data;
+
+        return this.shootingSettings;
+    }
+
+    async getShootingMode(): Promise<any> {
+        const endpoint = this.getFeatureUrl('shooting/settings/shootingmodedial');
+
+        if (!endpoint) {
+            throw new Error('Shooting mode feature not found');
+        }
+
+        const response = await fetch(endpoint.path);
+
+        return response.json();
+    }
+
+    async setShootingMode(mode: CanonShootingMode): Promise<any> {
+        const endpoint = this.getFeatureUrl('shooting/settings/shootingmode');
+
+        if (!endpoint) {
+            throw new Error('Shooting mode feature not found');
+        }
+
+        const body = {
+            value: mode,
+        };
+
+        const response = await fetch(endpoint.path, { method: 'PUT', body: JSON.stringify(body) });
+
+        return response.json();
+    }
+
+    async getIgnoreShootingModeDial(): Promise<boolean> {
+        const endpoint = this.getFeatureUrl('shooting/control/ignoreshootingmodedialmode');
+
+        if (!endpoint) {
+            throw new Error('Ignore shooting mode dial feature not found');
+        }
+
+        const response = await fetch(endpoint.path);
+
+        const data = await response.json();
+
+        this.ignoreShootingModeDial = data.status === 'on';
+
+        return this.ignoreShootingModeDial;
+    }
+
+    async setIgnoreShootingModeDial(status: boolean): Promise<any> {
+        const endpoint = this.getFeatureUrl('shooting/control/ignoreshootingmodedialmode');
+
+        if (!endpoint) {
+            throw new Error('Ignore shooting mode dial feature not found');
+        }
+
+        try {
+            const body = {
+                action: status ? 'on' : 'off',
+            };
+            const response = await fetch(endpoint.path, {
+                method: 'POST',
+                body: JSON.stringify(body),
+                headers: { 'Content-Type': 'application/json' },
+            });
+            if (response.ok) {
+                this.ignoreShootingModeDial = status;
+                return status;
+            }
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    async changeShootingMode(mode: CanonShootingMode): Promise<void> {
+        if (!this.ignoreShootingModeDial) {
+            await this.setIgnoreShootingModeDial(true);
+        }
+
+        return this.setShootingMode(mode);
+    }
+
+    async flipDetail(kind: string = 'info'): Promise<{ info?: any; image?: ArrayBuffer }> {
         const endpoint = this.getFeatureUrl('shooting/liveview/flipdetail');
 
         if (!endpoint) {
@@ -553,59 +739,62 @@ export class Canon extends Camera {
 
         const url = new URL(endpoint.path);
         url.searchParams.append('kind', kind);
-        
+
         try {
             const response = await fetch(url.toString(), {
                 method: 'GET',
                 headers: { 'Content-Type': 'application/octet-stream' },
             });
-            
+
             const reader = response.body?.getReader();
             if (!reader) {
                 throw new Error('Response body reader not available');
             }
 
-            const result: { info?: any, image?: ArrayBuffer } = {};
+            const result: { info?: any; image?: ArrayBuffer } = {};
             let buffer = new Uint8Array(0);
-            
+
             while (true) {
                 const { done, value } = await reader.read();
-                
+
                 if (done) {
                     break;
                 }
-                
+
                 if (!value || value.length === 0) {
                     continue;
                 }
-                                
+
                 const newBuffer = new Uint8Array(buffer.length + value.length);
                 newBuffer.set(buffer);
                 newBuffer.set(value, buffer.length);
                 buffer = newBuffer;
-                
+
                 let pos = 0;
                 while (pos < buffer.length - 1) {
-                    if (buffer[pos] === 0xFF && buffer[pos + 1] === 0x00) {
+                    if (buffer[pos] === 0xff && buffer[pos + 1] === 0x00) {
                         if (pos + 6 >= buffer.length) break;
-                        
+
                         pos += 2;
-                        
+
                         const type = buffer[pos];
                         pos++;
-                        
-                        const length = (buffer[pos] << 24) | (buffer[pos + 1] << 16) | 
-                                      (buffer[pos + 2] << 8) | buffer[pos + 3];
+
+                        const length =
+                            (buffer[pos] << 24) | (buffer[pos + 1] << 16) | (buffer[pos + 2] << 8) | buffer[pos + 3];
                         pos += 4;
-                        
+
                         if (pos + length + 2 > buffer.length) {
                             pos = pos - 7;
                             break;
                         }
-                        
+
                         if (type === 0x00) {
                             const imageData = buffer.slice(pos, pos + length);
-                            result.image = imageData.buffer.slice(imageData.byteOffset, imageData.byteOffset + imageData.byteLength);
+                            result.image = imageData.buffer.slice(
+                                imageData.byteOffset,
+                                imageData.byteOffset + imageData.byteLength
+                            );
                         } else if (type === 0x01) {
                             const infoData = buffer.slice(pos, pos + length);
                             const text = new TextDecoder().decode(infoData);
@@ -615,22 +804,22 @@ export class Canon extends Camera {
                                 throw new Error('Failed to parse info JSON');
                             }
                         }
-                        
+
                         pos += length;
-                        
-                        if (pos + 1 < buffer.length && buffer[pos] === 0xFF && buffer[pos + 1] === 0xFF) {
+
+                        if (pos + 1 < buffer.length && buffer[pos] === 0xff && buffer[pos + 1] === 0xff) {
                             pos += 2;
                         }
                     } else {
                         pos++;
                     }
                 }
-                
+
                 if (pos > 0) {
                     buffer = buffer.slice(pos);
                 }
             }
-            
+
             return result;
         } catch (error) {
             throw error;
@@ -657,4 +846,3 @@ export class Canon extends Camera {
         return url.toString();
     }
 }
-

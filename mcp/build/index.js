@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { Canon } from "./Canon.js";
+import { Canon, CanonShootingMode } from "./Canon.js";
 // Create server instance
 const server = new McpServer({
     name: "canon",
@@ -21,11 +21,11 @@ server.tool("connect-canon", "Connect to a Canon camera", {
     password: z.string().optional(),
 }, async ({ host, port, https, username, password }) => {
     canon = new Canon(host, port, https, username, password);
-    const connected = await canon.connect();
+    const cameraInfo = await canon.connect();
     return {
         content: [{
                 type: "text",
-                text: "Connected to Canon camera",
+                text: JSON.stringify(cameraInfo),
             }],
     };
 });
@@ -50,10 +50,93 @@ server.tool("take-picture", "Take a picture", {}, async () => {
             }]
     };
 });
+server.tool("get-shooting-settings", "Get shooting settings", {}, async () => {
+    if (!canon) {
+        return {
+            content: [{
+                    type: "text",
+                    text: "Canon camera not connected. Please connect first.",
+                }],
+        };
+    }
+    const shootingSettings = await canon.getShootingSettings();
+    return {
+        content: [{
+                type: "text",
+                text: JSON.stringify(shootingSettings, null, 2),
+            }],
+    };
+});
+server.tool("change-shooting-mode", "Change shooting mode", {
+    mode: z.nativeEnum(CanonShootingMode).optional(),
+}, async ({ mode }) => {
+    if (!canon) {
+        return {
+            content: [{
+                    type: "text",
+                    text: "Canon camera not connected. Please connect first.",
+                }],
+        };
+    }
+    const newMode = mode;
+    if (!newMode) {
+        return {
+            content: [{
+                    type: "text",
+                    text: "No mode provided. Please provide a mode.",
+                }],
+        };
+    }
+    const shootingMode = await canon.changeShootingMode(newMode);
+    return {
+        content: [{
+                type: "text",
+                text: JSON.stringify(shootingMode, null, 2),
+            }],
+    };
+});
+server.tool("set-aperture-setting", "Set aperture setting", {
+    value: z.string(),
+}, async ({ value }) => {
+    if (!canon) {
+        return {
+            content: [{
+                    type: "text",
+                    text: "Canon camera not connected. Please connect first.",
+                }],
+        };
+    }
+    const apertureSetting = await canon.setApertureSetting(value);
+    return {
+        content: [{
+                type: "text",
+                text: JSON.stringify(apertureSetting, null, 2),
+            }],
+    };
+});
+server.tool("set-shutter-speed-setting", "Set shutter speed setting", {
+    value: z.string(),
+}, async ({ value }) => {
+    if (!canon) {
+        return {
+            content: [{
+                    type: "text",
+                    text: "Canon camera not connected. Please connect first.",
+                }],
+        };
+    }
+    const shutterSpeedSetting = await canon.setShutterSpeedSetting(value);
+    return {
+        content: [{
+                type: "text",
+                text: JSON.stringify(shutterSpeedSetting, null, 2),
+            }],
+    };
+});
 async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    //console.log("Server started");
+    console.log("Server started");
 }
 main().catch((err) => {
     console.error(err);
