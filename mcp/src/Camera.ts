@@ -7,5 +7,5 @@ export abstract class Camera {
     macAddress!: string;
 
     abstract connect(): Promise<boolean>;
-    abstract takePicture(): Promise<string[]>;
+    abstract takePhoto(): Promise<string[]>;
 }

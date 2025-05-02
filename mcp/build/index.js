@@ -29,7 +29,10 @@ server.tool("connect-canon", "Connect to a Canon camera", {
             }],
     };
 });
-server.tool("take-picture", "Take a picture", {}, async () => {
+server.tool("take-photo", "Take a photo", {
+    delay: z.number().optional().default(0).describe("Delay in seconds between photos"),
+    repeat: z.number().optional().default(1).describe("Number of photos to take"),
+}, async ({ delay, repeat }) => {
     if (!canon) {
         return {
             content: [{
@@ -40,7 +43,7 @@ server.tool("take-picture", "Take a picture", {}, async () => {
         };
     }
     // await canon.getEventPolling();
-    const picture = await canon.takePicture();
+    const picture = await canon.takePhoto();
     const base64 = picture[0];
     return {
         content: [{
@@ -130,6 +133,189 @@ server.tool("set-shutter-speed-setting", "Set shutter speed setting", {
         content: [{
                 type: "text",
                 text: JSON.stringify(shutterSpeedSetting, null, 2),
+            }],
+    };
+});
+server.tool("set-iso-setting", "Set ISO setting", {
+    value: z.string(),
+}, async ({ value }) => {
+    if (!canon) {
+        return {
+            content: [{
+                    type: "text",
+                    text: "Canon camera not connected. Please connect first.",
+                }],
+        };
+    }
+    const isoSetting = await canon.setIsoSetting(value);
+    return {
+        content: [{
+                type: "text",
+                text: JSON.stringify(isoSetting, null, 2),
+            }],
+    };
+});
+server.tool("set-auto-focus-setting", "Set auto focus setting", {
+    value: z.string(),
+}, async ({ value }) => {
+    if (!canon) {
+        return {
+            content: [{
+                    type: "text",
+                    text: "Canon camera not connected. Please connect first.",
+                }],
+        };
+    }
+    const autoFocusSetting = await canon.setAutoFocusSetting(value);
+    return {
+        content: [{
+                type: "text",
+                text: JSON.stringify(autoFocusSetting, null, 2),
+            }],
+    };
+});
+server.tool("get-battery-status", "Get battery status", {}, async () => {
+    if (!canon) {
+        return {
+            content: [{
+                    type: "text",
+                    text: "Canon camera not connected. Please connect first.",
+                }],
+        };
+    }
+    const batteryStatus = await canon.getBatteryStatus();
+    return {
+        content: [{
+                type: "text",
+                text: JSON.stringify(batteryStatus, null, 2),
+            }],
+    };
+});
+server.tool("get-storage-status", "Get storage status", {}, async () => {
+    if (!canon) {
+        return {
+            content: [{
+                    type: "text",
+                    text: "Canon camera not connected. Please connect first.",
+                }],
+        };
+    }
+    const storageStatus = await canon.getStorageStatus();
+    return {
+        content: [{
+                type: "text",
+                text: JSON.stringify(storageStatus, null, 2),
+            }],
+    };
+});
+server.tool("get-temperature-status", "Get temperature status", {}, async () => {
+    if (!canon) {
+        return {
+            content: [{
+                    type: "text",
+                    text: "Canon camera not connected. Please connect first.",
+                }],
+        };
+    }
+    const temperatureStatus = await canon.getTemperatureStatus();
+    return {
+        content: [{
+                type: "text",
+                text: JSON.stringify(temperatureStatus, null, 2),
+            }],
+    };
+});
+server.tool("get-datetime-setting", "Get date and time setting", {}, async () => {
+    if (!canon) {
+        return {
+            content: [{
+                    type: "text",
+                    text: "Canon camera not connected. Please connect first.",
+                }],
+        };
+    }
+    const dateTimeSetting = await canon.getDateTimeSetting();
+    return {
+        content: [{
+                type: "text",
+                text: JSON.stringify(dateTimeSetting, null, 2),
+            }],
+    };
+});
+server.tool("get-sdp", "Get SDP file of RTP", {}, async () => {
+    if (!canon) {
+        return {
+            content: [{
+                    type: "text",
+                    text: "Canon camera not connected. Please connect first.",
+                }],
+        };
+    }
+    const sdp = await canon.getSDP();
+    return {
+        content: [{
+                type: "text",
+                text: sdp,
+            }],
+    };
+});
+server.tool("start-rtp", "Start RTP", {}, async () => {
+    if (!canon) {
+        return {
+            content: [{
+                    type: "text",
+                    text: "Canon camera not connected. Please connect first.",
+                }],
+        };
+    }
+    const rtp = await canon.startRTP();
+    return {
+        content: [{
+                type: "text",
+                text: JSON.stringify(rtp, null, 2),
+            }],
+    };
+});
+server.tool("stop-rtp", "Stop RTP", {}, async () => {
+    if (!canon) {
+        return {
+            content: [{
+                    type: "text",
+                    text: "Canon camera not connected. Please connect first.",
+                }],
+        };
+    }
+    const rtp = await canon.stopRTP();
+    return {
+        content: [{
+                type: "text",
+                text: JSON.stringify(rtp, null, 2),
+            }],
+    };
+});
+server.tool("get-lens-information", "Get lens information", {}, async () => {
+    // if (!canon) {
+    //     return {
+    //         content: [{
+    //             type: "text",
+    //             text: "Canon camera not connected. Please connect first.",
+    //         }],
+    //     };
+    // }
+    const lensInformation = await canon.getLensInformation();
+    return {
+        content: [{
+                type: "text",
+                text: JSON.stringify(lensInformation, null, 2),
+            }],
+    };
+});
+server.tool("restore-dial-mode", "Restore dial mode", {}, async () => {
+    await canon.restoreDialMode();
+    return {
+        content: [{
+                type: "text",
+                text: "Dial mode restored",
             }],
     };
 });

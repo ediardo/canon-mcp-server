@@ -59,6 +59,9 @@ export class Canon extends Camera {
     shootingSettings;
     apertureSetting;
     shutterSpeedSetting;
+    isoSetting;
+    autoFocusSetting;
+    lensInformation;
     constructor(ipAddress, port = 443, https, username, password) {
         super();
         this.ipAddress = ipAddress;
@@ -88,6 +91,7 @@ export class Canon extends Camera {
             this.serialNumber = deviceInformation.serialnumber;
             this.firmwareVersion = deviceInformation.firmwareversion;
             this.macAddress = deviceInformation.macaddress;
+            this.lensInformation = await this.getLensInformation();
             return {
                 currentDirectory: this.currentDirectory,
                 shootingSettings: this.shootingSettings,
@@ -96,18 +100,30 @@ export class Canon extends Camera {
                 serialNumber: this.serialNumber,
                 firmwareVersion: this.firmwareVersion,
                 macAddress: this.macAddress,
+                lensInformation: this.lensInformation,
             };
         }
         catch (error) {
             throw error;
         }
     }
-    async takePicture() {
+    static getSDPIpAddress(sdp) {
+        const lines = sdp.split('\n');
+        for (const line of lines) {
+            if (line.startsWith('o=')) {
+                const parts = line.split(' ');
+                // IP address is the last part in the 'o=' line
+                return parts[parts.length - 1];
+            }
+        }
+        return null;
+    }
+    async takePhoto() {
         try {
             const base64Images = [];
             await this.shutterbutton();
             await new Promise((resolve) => setTimeout(resolve, DELAY_AFTER_SHUTTER_BUTTON));
-            const events = await this.getEventPolling();
+            const events = await this.startEventPolling();
             if (events && events.addedcontents) {
                 for (const content of events.addedcontents) {
                     const image = await this.downloadImage(content, 'display');
@@ -122,7 +138,15 @@ export class Canon extends Camera {
             throw error;
         }
     }
-    async getDeviceStatusBattery() {
+    async getDateTimeSetting() {
+        const url = this.getFeatureUrl('functions/datetime');
+        if (!url) {
+            throw new Error('Device status datetime feature not found');
+        }
+        const response = await fetch(url.path);
+        return response.json();
+    }
+    async getBatteryStatus() {
         const url = this.getFeatureUrl('devicestatus/battery');
         if (!url) {
             throw new Error('Device status battery feature not found');
@@ -193,11 +217,37 @@ export class Canon extends Camera {
         const response = await fetch(url.path);
         return response.json();
     }
+    async getStorageStatus() {
+        const url = this.getFeatureUrl('devicestatus/storage');
+        if (!url) {
+            throw new Error('Storage status feature not found');
+        }
+        const response = await fetch(url.path);
+        return response.json();
+    }
+    async getTemperatureStatus() {
+        const url = this.getFeatureUrl('devicestatus/temperature');
+        if (!url) {
+            throw new Error('Temperature status feature not found');
+        }
+        const response = await fetch(url.path);
+        return response.json();
+    }
+    async getSDP() {
+        const url = this.getFeatureUrl('shooting/liveview/rtpsessiondesc');
+        if (!url) {
+            throw new Error('SDP feature not found');
+        }
+        const response = await fetch(url.path);
+        return response.text();
+    }
     /**
-     * Stream the event monitoring data
+     * Start the event monitoring in chunk format
+     *
+     *
      * @returns
      */
-    async getEventMonitoring() {
+    async startEventMonitoring() {
         const url = this.getFeatureUrl('event/monitoring');
         if (!url) {
             throw new Error('Event monitoring feature not found');
@@ -260,7 +310,25 @@ export class Canon extends Camera {
         }
         return {};
     }
-    async getEventPolling() {
+    /**
+     * Stop the event monitoring
+     *
+     * @returns
+     */
+    async stopEventMonitoring() {
+        const url = this.getFeatureUrl('event/monitoring');
+        if (!url) {
+            throw new Error('Event monitoring feature not found');
+        }
+        const response = await fetch(url.path, { method: 'DELETE' });
+        return response.json();
+    }
+    /**
+     * Start the event polling
+     *
+     * @returns
+     */
+    async startEventPolling() {
         const url = this.getFeatureUrl('event/polling');
         if (!url) {
             throw new Error('Event monitoring feature not found');
@@ -274,6 +342,38 @@ export class Canon extends Camera {
         const response = await fetch(fullUrl.toString());
         return response.json();
     }
+    async stopEventPolling() {
+        const url = this.getFeatureUrl('event/polling');
+        if (!url) {
+            throw new Error('Event monitoring feature not found');
+        }
+        const response = await fetch(url.path, { method: 'DELETE' });
+        return response.json();
+    }
+    async startRTP() {
+        const url = this.getFeatureUrl('shooting/liveview/rtp');
+        if (!url) {
+            throw new Error('RTP feature not found');
+        }
+        const body = {
+            action: 'start',
+            ipaddress: this.ipAddress,
+        };
+        const response = await fetch(url.path, {
+            method: 'POST',
+            body: JSON.stringify(body),
+            headers: { 'Content-Type': 'application/json' },
+        });
+        return response.json();
+    }
+    async stopRTP() {
+        const url = this.getFeatureUrl('shooting/liveview/rtp');
+        if (!url) {
+            throw new Error('RTP feature not found');
+        }
+        const response = await fetch(url.path, { method: 'POST', body: JSON.stringify({ action: 'stop' }) });
+        return response.json();
+    }
     async getLastPageContents() {
         const contents = await this.getContents({
             directoryPath: this.currentDirectory.path,
@@ -282,6 +382,18 @@ export class Canon extends Camera {
             page: this.pageNumber,
         });
         return contents;
+    }
+    /**
+     * Get the lens information
+     * @returns {Promise<any>}
+     */
+    async getLensInformation() {
+        const url = this.getFeatureUrl('devicestatus/lens');
+        if (!url) {
+            throw new Error('Lens information feature not found');
+        }
+        const response = await fetch(url.path);
+        return response.json();
     }
     async getStorages() {
         const url = this.getFeatureUrl('contents');
@@ -458,13 +570,85 @@ export class Canon extends Camera {
         this.shootingSettings = data;
         return this.shootingSettings;
     }
+    async getIsoSetting() {
+        const endpoint = this.getFeatureUrl('shooting/settings/iso');
+        if (!endpoint) {
+            throw new Error('ISO setting feature not found');
+        }
+        const response = await fetch(endpoint.path);
+        const data = await response.json();
+        this.isoSetting = data.value;
+        return this.isoSetting;
+    }
+    async setIsoSetting(value) {
+        const endpoint = this.getFeatureUrl('shooting/settings/iso');
+        if (!endpoint) {
+            throw new Error('ISO setting feature not found');
+        }
+        const body = {
+            value,
+        };
+        const response = await fetch(endpoint.path, { method: 'PUT', body: JSON.stringify(body) });
+        this.isoSetting = value;
+        return response.json();
+    }
+    /**
+     * Get the auto focus setting
+     *
+     * @returns {Promise<{value: string, ability: string[]}>} Object containing current auto focus value and available options
+     * Example:
+     * {
+     *   "value": "oneshot",
+     *   "ability": ["oneshot", "servo"]
+     * }
+     */
+    async getAutoFocusSetting() {
+        const endpoint = this.getFeatureUrl('shooting/settings/af');
+        if (!endpoint) {
+            throw new Error('Auto focus setting feature not found');
+        }
+        try {
+            const response = await fetch(endpoint.path);
+            const data = await response.json();
+            this.autoFocusSetting = data.value;
+            return this.autoFocusSetting;
+        }
+        catch (error) {
+            throw error;
+        }
+    }
+    /**
+     * Set the auto focus setting
+     *
+     * @param value
+     * @returns
+     */
+    async setAutoFocusSetting(value) {
+        const endpoint = this.getFeatureUrl('shooting/settings/af');
+        if (!endpoint) {
+            throw new Error('Auto focus setting feature not found');
+        }
+        const body = {
+            value,
+        };
+        const response = await fetch(endpoint.path, { method: 'PUT', body: JSON.stringify(body) });
+        this.autoFocusSetting = value;
+        return response.json();
+    }
     async getShootingMode() {
         const endpoint = this.getFeatureUrl('shooting/settings/shootingmodedial');
         if (!endpoint) {
             throw new Error('Shooting mode feature not found');
         }
-        const response = await fetch(endpoint.path);
-        return response.json();
+        try {
+            const response = await fetch(endpoint.path);
+            const data = await response.json();
+            this.shootingMode = data.value;
+            return this.shootingMode;
+        }
+        catch (error) {
+            throw error;
+        }
     }
     async setShootingMode(mode) {
         const endpoint = this.getFeatureUrl('shooting/settings/shootingmode');
@@ -515,6 +699,9 @@ export class Canon extends Camera {
             await this.setIgnoreShootingModeDial(true);
         }
         return this.setShootingMode(mode);
+    }
+    async restoreDialMode() {
+        await this.setIgnoreShootingModeDial(false);
     }
     async flipDetail(kind = 'info') {
         const endpoint = this.getFeatureUrl('shooting/liveview/flipdetail');
