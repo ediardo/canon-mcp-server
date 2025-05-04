@@ -224,19 +224,21 @@ export class Canon extends Camera {
         try {
             const base64Images: string[] = [];
 
-            await this.shutterbutton();
-            await new Promise((resolve) => setTimeout(resolve, DELAY_AFTER_SHUTTER_BUTTON));
-            const events = await this.startEventPolling();
-            if (events && events.addedcontents) {
-                for (const content of events.addedcontents) {
-                    const image = await this.downloadImage(content, 'display');
-                    const arrayBuffer = await image.arrayBuffer();
-                    const base64 = Buffer.from(arrayBuffer).toString('base64');
-                    base64Images.push(base64);
-                }
-            }
+            const response = await this.shutterbutton();
+           
+            return response
+            //await new Promise((resolve) => setTimeout(resolve, DELAY_AFTER_SHUTTER_BUTTON));
+            // const events = await this.startEventPolling();
+            // if (events && events.addedcontents) {
+            //     for (const content of events.addedcontents) {
+            //         const image = await this.downloadImage(content, 'display');
+            //         const arrayBuffer = await image.arrayBuffer();
+            //         const base64 = Buffer.from(arrayBuffer).toString('base64');
+            //         base64Images.push(base64);
+            //     }
+            // }
 
-            return base64Images;
+            // return base64Images;
         } catch (error) {
             throw error;
         }
@@ -359,6 +361,10 @@ export class Canon extends Camera {
 
         return response.json();
     }
+
+    // async getLastPhoto(): Promise<CanonContent> {
+        
+    // }
 
     async getStorageStatus(): Promise<CanonStorageStatus> {
         const url = this.getFeatureUrl('devicestatus/storage');
@@ -507,8 +513,8 @@ export class Canon extends Camera {
 
         const fullUrl = new URL(url.path);
 
-        if (url.version === CanonVersion.VER100) {
-            const timemout = 'immediate';
+        if (url.version === CanonVersion.VER110) {
+            const timemout = 'short';
             fullUrl.searchParams.append('timeout', timemout);
         }
         //console.log(fullUrl.toString());

@@ -53,9 +53,10 @@ server.tool("take-photo", "Take a photo", {
     const base64 = picture[0];
     return {
         content: [{
-            type: "image",
-            data: base64,
-            mimeType: "image/jpeg"
+            type: "text",
+            // data: base64,
+            // mimeType: "image/jpeg"
+            text: JSON.stringify(picture, null, 2)
         }]
     };
 });
@@ -341,6 +342,25 @@ server.tool("restore-dial-mode", "Restore dial mode", {}, async () => {
         }],
     };
 });
+
+// server.tool("get-last-photo", "Get last photo", {}, async () => {
+//     if (!canon) {
+//         return {
+//             content: [{
+//                 type: "text",
+//                 text: "Canon camera not connected. Please connect first.",
+//             }],
+//         };
+//     }
+//     const lastPhoto = await canon.getLastPhoto();
+//     return {
+//         content: [{
+//             type: "image",
+//             data: lastPhoto,
+//             mimeType: "image/jpeg",
+//         }],
+//     };
+// });
 
 async function main() {
     const transport = new StdioServerTransport();

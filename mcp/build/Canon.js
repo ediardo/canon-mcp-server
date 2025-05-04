@@ -121,18 +121,19 @@ export class Canon extends Camera {
     async takePhoto() {
         try {
             const base64Images = [];
-            await this.shutterbutton();
-            await new Promise((resolve) => setTimeout(resolve, DELAY_AFTER_SHUTTER_BUTTON));
-            const events = await this.startEventPolling();
-            if (events && events.addedcontents) {
-                for (const content of events.addedcontents) {
-                    const image = await this.downloadImage(content, 'display');
-                    const arrayBuffer = await image.arrayBuffer();
-                    const base64 = Buffer.from(arrayBuffer).toString('base64');
-                    base64Images.push(base64);
-                }
-            }
-            return base64Images;
+            const response = await this.shutterbutton();
+            return response;
+            //await new Promise((resolve) => setTimeout(resolve, DELAY_AFTER_SHUTTER_BUTTON));
+            // const events = await this.startEventPolling();
+            // if (events && events.addedcontents) {
+            //     for (const content of events.addedcontents) {
+            //         const image = await this.downloadImage(content, 'display');
+            //         const arrayBuffer = await image.arrayBuffer();
+            //         const base64 = Buffer.from(arrayBuffer).toString('base64');
+            //         base64Images.push(base64);
+            //     }
+            // }
+            // return base64Images;
         }
         catch (error) {
             throw error;
@@ -217,6 +218,8 @@ export class Canon extends Camera {
         const response = await fetch(url.path);
         return response.json();
     }
+    // async getLastPhoto(): Promise<CanonContent> {
+    // }
     async getStorageStatus() {
         const url = this.getFeatureUrl('devicestatus/storage');
         if (!url) {
@@ -334,8 +337,8 @@ export class Canon extends Camera {
             throw new Error('Event monitoring feature not found');
         }
         const fullUrl = new URL(url.path);
-        if (url.version === CanonVersion.VER100) {
-            const timemout = 'immediate';
+        if (url.version === CanonVersion.VER110) {
+            const timemout = 'short';
             fullUrl.searchParams.append('timeout', timemout);
         }
         //console.log(fullUrl.toString());
