@@ -71,7 +71,7 @@ export class Canon extends Camera {
         this.password = password;
         this.baseUrl = `${this.https ? 'https' : 'http'}://${this.ipAddress}:${this.port}`;
     }
-    async connect() {
+    async connect({ startLiveView = false } = {}) {
         const headers = new Headers();
         try {
             const response = await fetch(`${this.baseUrl}/ccapi`, {
@@ -92,6 +92,9 @@ export class Canon extends Camera {
             this.firmwareVersion = deviceInformation.firmwareversion;
             this.macAddress = deviceInformation.macaddress;
             this.lensInformation = await this.getLensInformation();
+            if (startLiveView) {
+                await this.startLiveView();
+            }
             return {
                 currentDirectory: this.currentDirectory,
                 shootingSettings: this.shootingSettings,
@@ -121,6 +124,7 @@ export class Canon extends Camera {
     async takePhoto() {
         try {
             const base64Images = [];
+            await this.startEventPolling();
             const response = await this.shutterbutton();
             return response;
             //await new Promise((resolve) => setTimeout(resolve, DELAY_AFTER_SHUTTER_BUTTON));
@@ -338,7 +342,7 @@ export class Canon extends Camera {
         }
         const fullUrl = new URL(url.path);
         if (url.version === CanonVersion.VER110) {
-            const timemout = 'short';
+            const timemout = 'immediately';
             fullUrl.searchParams.append('timeout', timemout);
         }
         //console.log(fullUrl.toString());
@@ -467,7 +471,7 @@ export class Canon extends Camera {
         this.lastPageContents = contents;
         return blobs;
     }
-    async startLiveView() {
+    async startLiveView(liveViewSize = 'medium', cameraDisplay = 'keep') {
         const endpoint = this.getFeatureUrl('shooting/liveview');
         if (!endpoint) {
             throw new Error('Live view feature not found');
@@ -475,24 +479,24 @@ export class Canon extends Camera {
         const response = await fetch(endpoint.path, {
             method: 'POST',
             body: JSON.stringify({
-                liveviewsize: 'medium',
-                cameradisplay: 'on',
+                liveviewsize: liveViewSize,
+                cameradisplay: cameraDisplay,
             }),
         });
         return response.json();
     }
-    async flip(savePath) {
+    async getLiveViewImageFlip() {
         const endpoint = this.getFeatureUrl('shooting/liveview/flip');
         if (!endpoint) {
             throw new Error('Flip  feature not found');
         }
         const response = await fetch(endpoint.path, { method: 'GET', headers: { 'Content-Type': 'image/jpeg' } });
-        // check if the response is an image
-        if (response.headers.get('content-type')?.includes('image/jpeg')) {
-            const buffer = await response.arrayBuffer();
-            return buffer;
+        if (!response.ok) {
+            throw new Error('Failed to get live view image');
         }
-        return response.json();
+        const buffer = await response.arrayBuffer();
+        const base64 = Buffer.from(buffer).toString('base64');
+        return base64;
     }
     async shutterbutton() {
         const endpoint = this.getFeatureUrl('shooting/control/shutterbutton');
@@ -573,6 +577,19 @@ export class Canon extends Camera {
         this.shootingSettings = data;
         return this.shootingSettings;
     }
+    async getLastPhoto() {
+        const events = await this.startEventPolling();
+        if (!events || !events.addedcontents || events.addedcontents.length === 0) {
+            throw new Error('No photo added');
+        }
+        const { addedcontents } = events;
+        const path = addedcontents.filter((ad) => ad.endsWith('.JPG'))[0];
+        const image = await this.downloadImage(path, 'main');
+        const buffer = await image.arrayBuffer();
+        // save the buffer to a file
+        fs.writeFileSync(`/tmp/image-${Date.now()}.jpg`, Buffer.from(buffer));
+        return Buffer.from(buffer).toString('base64');
+    }
     async getIsoSetting() {
         const endpoint = this.getFeatureUrl('shooting/settings/iso');
         if (!endpoint) {
@@ -606,7 +623,7 @@ export class Canon extends Camera {
      * }
      */
     async getAutoFocusSetting() {
-        const endpoint = this.getFeatureUrl('shooting/settings/af');
+        const endpoint = this.getFeatureUrl('shooting/settings/afoperation');
         if (!endpoint) {
             throw new Error('Auto focus setting feature not found');
         }
@@ -627,7 +644,7 @@ export class Canon extends Camera {
      * @returns
      */
     async setAutoFocusSetting(value) {
-        const endpoint = this.getFeatureUrl('shooting/settings/af');
+        const endpoint = this.getFeatureUrl('shooting/settings/afoperation');
         if (!endpoint) {
             throw new Error('Auto focus setting feature not found');
         }
@@ -706,7 +723,7 @@ export class Canon extends Camera {
     async restoreDialMode() {
         await this.setIgnoreShootingModeDial(false);
     }
-    async flipDetail(kind = 'info') {
+    async getLiveViewImageFlipDetail(kind = 'info') {
         const endpoint = this.getFeatureUrl('shooting/liveview/flipdetail');
         if (!endpoint) {
             throw new Error('Flip detail feature not found');
@@ -718,6 +735,7 @@ export class Canon extends Camera {
                 method: 'GET',
                 headers: { 'Content-Type': 'application/octet-stream' },
             });
+            //console.log(response);
             const reader = response.body?.getReader();
             if (!reader) {
                 throw new Error('Response body reader not available');
@@ -752,7 +770,10 @@ export class Canon extends Camera {
                         }
                         if (type === 0x00) {
                             const imageData = buffer.slice(pos, pos + length);
-                            result.image = imageData.buffer.slice(imageData.byteOffset, imageData.byteOffset + imageData.byteLength);
+                            const base64Image = Buffer.from(imageData).toString('base64');
+                            // save the image to a file
+                            fs.writeFileSync(`/tmp/image-${Date.now()}.jpg`, Buffer.from(base64Image, 'base64'));
+                            result.image = base64Image;
                         }
                         else if (type === 0x01) {
                             const infoData = buffer.slice(pos, pos + length);
@@ -800,3 +821,4 @@ export class Canon extends Camera {
         return url.toString();
     }
 }
+export default Canon;

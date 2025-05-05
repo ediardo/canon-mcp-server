@@ -97,6 +97,12 @@ interface CanonLensInformation {
     mount: boolean;
     name: string;
 }
+
+interface CanonLiveViewImageFlipDetail {
+    info?: any;
+    image?: string;
+}
+
 enum CanonContentType {
     ALL = 'all',
     JPEG = 'jpeg',
@@ -133,6 +139,9 @@ export enum CanonShootingMode {
     BULB = 'bulb',
 }
 
+interface CanonConnectOptions {
+    startLiveView?: boolean;
+}
 const DELAY_AFTER_SHUTTER_BUTTON = 500;
 
 export class Canon extends Camera {
@@ -169,7 +178,7 @@ export class Canon extends Camera {
         this.baseUrl = `${this.https ? 'https' : 'http'}://${this.ipAddress}:${this.port}`;
     }
 
-    async connect(): Promise<any> {
+    async connect({ startLiveView = false }: CanonConnectOptions = {}): Promise<any> {
         const headers = new Headers();
 
         try {
@@ -194,6 +203,9 @@ export class Canon extends Camera {
             this.firmwareVersion = deviceInformation.firmwareversion;
             this.macAddress = deviceInformation.macaddress;
             this.lensInformation = await this.getLensInformation();
+            if (startLiveView) {
+                await this.startLiveView();
+            }
             return {
                 currentDirectory: this.currentDirectory,
                 shootingSettings: this.shootingSettings,
@@ -224,9 +236,10 @@ export class Canon extends Camera {
         try {
             const base64Images: string[] = [];
 
+            await this.startEventPolling();
             const response = await this.shutterbutton();
-           
-            return response
+
+            return response;
             //await new Promise((resolve) => setTimeout(resolve, DELAY_AFTER_SHUTTER_BUTTON));
             // const events = await this.startEventPolling();
             // if (events && events.addedcontents) {
@@ -363,7 +376,7 @@ export class Canon extends Camera {
     }
 
     // async getLastPhoto(): Promise<CanonContent> {
-        
+
     // }
 
     async getStorageStatus(): Promise<CanonStorageStatus> {
@@ -514,7 +527,7 @@ export class Canon extends Camera {
         const fullUrl = new URL(url.path);
 
         if (url.version === CanonVersion.VER110) {
-            const timemout = 'short';
+            const timemout = 'immediately';
             fullUrl.searchParams.append('timeout', timemout);
         }
         //console.log(fullUrl.toString());
@@ -685,7 +698,7 @@ export class Canon extends Camera {
         return blobs;
     }
 
-    async startLiveView() {
+    async startLiveView(liveViewSize: string = 'medium', cameraDisplay: string = 'keep') {
         const endpoint = this.getFeatureUrl('shooting/liveview');
 
         if (!endpoint) {
@@ -695,15 +708,15 @@ export class Canon extends Camera {
         const response = await fetch(endpoint.path, {
             method: 'POST',
             body: JSON.stringify({
-                liveviewsize: 'medium',
-                cameradisplay: 'on',
+                liveviewsize: liveViewSize,
+                cameradisplay: cameraDisplay,
             }),
         });
 
         return response.json();
     }
 
-    async flip(savePath?: string): Promise<ArrayBuffer> {
+    async getLiveViewImageFlip(): Promise<string> {
         const endpoint = this.getFeatureUrl('shooting/liveview/flip');
 
         if (!endpoint) {
@@ -712,14 +725,13 @@ export class Canon extends Camera {
 
         const response = await fetch(endpoint.path, { method: 'GET', headers: { 'Content-Type': 'image/jpeg' } });
 
-        // check if the response is an image
-        if (response.headers.get('content-type')?.includes('image/jpeg')) {
-            const buffer = await response.arrayBuffer();
-
-            return buffer;
+        if (!response.ok) {
+            throw new Error('Failed to get live view image');
         }
 
-        return response.json();
+        const buffer = await response.arrayBuffer();
+        const base64 = Buffer.from(buffer).toString('base64');
+        return base64;
     }
 
     async shutterbutton(): Promise<any> {
@@ -829,6 +841,23 @@ export class Canon extends Camera {
         return this.shootingSettings;
     }
 
+    async getLastPhoto(): Promise<string> {
+        const events = await this.startEventPolling();
+
+        if (!events || !events.addedcontents || events.addedcontents.length === 0) {
+            throw new Error('No photo added');
+        }
+
+        const { addedcontents }: { addedcontents: string[] } = events;
+        const path = addedcontents.filter((ad) => ad.endsWith('.JPG'))[0];
+        const image = await this.downloadImage(path, 'main');
+        const buffer = await image.arrayBuffer();
+
+        // save the buffer to a file
+        fs.writeFileSync(`/tmp/image-${Date.now()}.jpg`, Buffer.from(buffer));
+        return Buffer.from(buffer).toString('base64');
+    }
+
     async getIsoSetting(): Promise<any> {
         const endpoint = this.getFeatureUrl('shooting/settings/iso');
 
@@ -872,7 +901,7 @@ export class Canon extends Camera {
      * }
      */
     async getAutoFocusSetting(): Promise<any> {
-        const endpoint = this.getFeatureUrl('shooting/settings/af');
+        const endpoint = this.getFeatureUrl('shooting/settings/afoperation');
 
         if (!endpoint) {
             throw new Error('Auto focus setting feature not found');
@@ -898,7 +927,7 @@ export class Canon extends Camera {
      * @returns
      */
     async setAutoFocusSetting(value: string): Promise<any> {
-        const endpoint = this.getFeatureUrl('shooting/settings/af');
+        const endpoint = this.getFeatureUrl('shooting/settings/afoperation');
 
         if (!endpoint) {
             throw new Error('Auto focus setting feature not found');
@@ -1001,7 +1030,7 @@ export class Canon extends Camera {
         await this.setIgnoreShootingModeDial(false);
     }
 
-    async flipDetail(kind: string = 'info'): Promise<{ info?: any; image?: ArrayBuffer }> {
+    async getLiveViewImageFlipDetail(kind: string = 'info'): Promise<CanonLiveViewImageFlipDetail> {
         const endpoint = this.getFeatureUrl('shooting/liveview/flipdetail');
 
         if (!endpoint) {
@@ -1017,12 +1046,13 @@ export class Canon extends Camera {
                 headers: { 'Content-Type': 'application/octet-stream' },
             });
 
+            //console.log(response);
             const reader = response.body?.getReader();
             if (!reader) {
                 throw new Error('Response body reader not available');
             }
 
-            const result: { info?: any; image?: ArrayBuffer } = {};
+            const result: CanonLiveViewImageFlipDetail = {};
             let buffer = new Uint8Array(0);
 
             while (true) {
@@ -1059,13 +1089,12 @@ export class Canon extends Camera {
                             pos = pos - 7;
                             break;
                         }
-
                         if (type === 0x00) {
                             const imageData = buffer.slice(pos, pos + length);
-                            result.image = imageData.buffer.slice(
-                                imageData.byteOffset,
-                                imageData.byteOffset + imageData.byteLength
-                            );
+                            const base64Image = Buffer.from(imageData).toString('base64');
+                            // save the image to a file
+                            fs.writeFileSync(`/tmp/image-${Date.now()}.jpg`, Buffer.from(base64Image, 'base64'));
+                            result.image = base64Image;
                         } else if (type === 0x01) {
                             const infoData = buffer.slice(pos, pos + length);
                             const text = new TextDecoder().decode(infoData);
@@ -1117,3 +1146,5 @@ export class Canon extends Camera {
         return url.toString();
     }
 }
+
+export default Canon;
