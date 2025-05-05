@@ -62,6 +62,9 @@ export class Canon extends Camera {
     isoSetting;
     autoFocusSetting;
     lensInformation;
+    intervalMode = false;
+    intervalInterval = 0;
+    intervalRepeat = 0;
     constructor(ipAddress, port = 443, https, username, password) {
         super();
         this.ipAddress = ipAddress;
@@ -142,6 +145,28 @@ export class Canon extends Camera {
         catch (error) {
             throw error;
         }
+    }
+    async startIntervalPhotos(interval, repeat) {
+        this.intervalMode = true;
+        this.intervalInterval = interval;
+        this.intervalRepeat = repeat;
+        while (this.intervalMode && this.intervalRepeat > 0) {
+            await this.takePhoto();
+            await new Promise((resolve) => setTimeout(resolve, this.intervalInterval));
+            this.intervalRepeat--;
+        }
+    }
+    async getIntervalPhotosStatus() {
+        return {
+            intervalMode: this.intervalMode,
+            intervalInterval: this.intervalInterval,
+            intervalRepeat: this.intervalRepeat,
+        };
+    }
+    async stopIntervalPhotos() {
+        this.intervalMode = false;
+        this.intervalInterval = 0;
+        this.intervalRepeat = 0;
     }
     async getDateTimeSetting() {
         const url = this.getFeatureUrl('functions/datetime');

@@ -168,6 +168,10 @@ export class Canon extends Camera {
     isoSetting?: string;
     autoFocusSetting?: string;
     lensInformation?: CanonLensInformation;
+    intervalMode: boolean = false;
+    intervalInterval: number = 0;
+    intervalRepeat: number = 0;
+
     constructor(ipAddress: string, port: number = 443, https: boolean, username?: string, password?: string) {
         super();
         this.ipAddress = ipAddress;
@@ -234,27 +238,41 @@ export class Canon extends Camera {
 
     async takePhoto(): Promise<string[]> {
         try {
-            const base64Images: string[] = [];
 
             await this.startEventPolling();
             const response = await this.shutterbutton();
 
             return response;
-            //await new Promise((resolve) => setTimeout(resolve, DELAY_AFTER_SHUTTER_BUTTON));
-            // const events = await this.startEventPolling();
-            // if (events && events.addedcontents) {
-            //     for (const content of events.addedcontents) {
-            //         const image = await this.downloadImage(content, 'display');
-            //         const arrayBuffer = await image.arrayBuffer();
-            //         const base64 = Buffer.from(arrayBuffer).toString('base64');
-            //         base64Images.push(base64);
-            //     }
-            // }
 
-            // return base64Images;
         } catch (error) {
             throw error;
         }
+    }
+
+    async startIntervalPhotos(interval: number, repeat: number) {
+        this.intervalMode = true;
+        this.intervalInterval = interval;
+        this.intervalRepeat = repeat;
+
+        while (this.intervalMode && this.intervalRepeat > 0) {
+            await this.takePhoto();
+            await new Promise((resolve) => setTimeout(resolve, this.intervalInterval));
+            this.intervalRepeat--;
+        }
+    }
+
+    async getIntervalPhotosStatus() {
+        return {
+            intervalMode: this.intervalMode,
+            intervalInterval: this.intervalInterval,
+            intervalRepeat: this.intervalRepeat,
+        };
+    }
+
+    async stopIntervalPhotos() {
+        this.intervalMode = false;
+        this.intervalInterval = 0;
+        this.intervalRepeat = 0;
     }
 
     async getDateTimeSetting(): Promise<CanonDateTimeSetting> {

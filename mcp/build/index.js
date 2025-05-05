@@ -13,7 +13,7 @@ const server = new McpServer({
 });
 // Keep Canon instance accessible to other methods
 let canon;
-server.tool('connect-canon', 'Connect to a Canon camera', {
+server.tool('connect-canon', 'Connect to a Canon camera via CCAPI.', {
     host: z.string(),
     port: z.number().optional().default(8080),
     https: z.boolean().optional().default(false),
@@ -31,7 +31,7 @@ server.tool('connect-canon', 'Connect to a Canon camera', {
         ],
     };
 });
-server.tool('take-photo', 'Take a photo', {
+server.tool('take-photo', 'Take a photo with the camera using the current shooting settings.', {
     delay: z.number().optional().default(0).describe('Delay in seconds between photos'),
     repeat: z.number().optional().default(1).describe('Number of photos to take'),
 }, async ({ delay, repeat }) => {
@@ -81,7 +81,7 @@ server.tool('get-shooting-settings', 'Get shooting settings', {}, async () => {
         ],
     };
 });
-server.tool('change-shooting-mode', 'Change shooting mode', {
+server.tool('change-shooting-mode', 'Change shooting mode ', {
     mode: z.nativeEnum(CanonShootingMode).optional(),
 }, async ({ mode }) => {
     if (!canon) {
@@ -441,6 +441,53 @@ server.tool('get-live-view-image', 'Get live view image of the camera. This does
             {
                 type: 'text',
                 text: JSON.stringify(liveViewImage.info, null, 2),
+            },
+        ],
+    };
+});
+server.tool('start-interval-photos', 'Start taking photos at regular intervals', {
+    interval: z.number().describe('Time between photos in milliseconds'),
+    repeat: z.number().describe('Number of photos to take. Set to 0 for unlimited photos.'),
+}, async ({ interval, repeat }) => {
+    if (!canon) {
+        return {
+            content: [
+                {
+                    type: 'text',
+                    text: 'Canon camera not connected. Please connect first.',
+                },
+            ],
+            isError: true,
+        };
+    }
+    canon.startIntervalPhotos(interval, repeat);
+    return {
+        content: [
+            {
+                type: 'text',
+                text: `Started interval photos: Taking ${repeat === 0 ? 'unlimited' : repeat} photos every ${interval}ms`,
+            },
+        ],
+    };
+});
+server.tool('get-interval-photos-status', 'Get status of interval photos', {}, async () => {
+    const status = await canon.getIntervalPhotosStatus();
+    return {
+        content: [
+            {
+                type: 'text',
+                text: JSON.stringify(status, null, 2),
+            },
+        ],
+    };
+});
+server.tool('stop-interval-photos', 'Stop taking photos at regular intervals', {}, async () => {
+    await canon.stopIntervalPhotos();
+    return {
+        content: [
+            {
+                type: 'text',
+                text: 'Stopped interval photos',
             },
         ],
     };
