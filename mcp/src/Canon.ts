@@ -103,6 +103,16 @@ interface CanonLiveViewImageFlipDetail {
     image?: string;
 }
 
+interface CanonExposureCompensationSetting {
+    value: string;
+    ability: string[];
+}
+
+interface CanonWhiteBalanceSetting {
+    value: string;
+    ability: string[];
+}
+
 enum CanonContentType {
     ALL = 'all',
     JPEG = 'jpeg',
@@ -172,7 +182,14 @@ export class Canon extends Camera {
     intervalInterval: number = 0;
     intervalRepeat: number = 0;
 
-    constructor(ipAddress: string, port: number = 443, https: boolean, username?: string, password?: string) {
+    constructor(
+        ipAddress: string,
+        port: number = 443,
+        https: boolean,
+        username?: string,
+        password?: string,
+        
+    ) {
         super();
         this.ipAddress = ipAddress;
         this.port = port;
@@ -238,12 +255,10 @@ export class Canon extends Camera {
 
     async takePhoto(): Promise<string[]> {
         try {
-
             await this.startEventPolling();
             const response = await this.shutterbutton();
 
             return response;
-
         } catch (error) {
             throw error;
         }
@@ -679,16 +694,16 @@ export class Canon extends Camera {
         }
 
         // save the url to a file
-        fs.writeFileSync(`/tmp/canon-${Date.now()}.url`, url.toString());
+        // fs.writeFileSync(`/tmp/canon-${Date.now()}.url`, url.toString());
         const response = await fetch(url.toString());
         // save the response to a file
-        if (!response.ok) {
-            // save the response to a file
-            fs.writeFileSync(`/tmp/canon-${Date.now()}.json`, JSON.stringify(response, null, 2));
-            // save the status text to a file
-            fs.writeFileSync(`/tmp/canon-${Date.now()}.status`, response.statusText);
-            throw new Error(`Failed to download image: ${response.statusText}`);
-        }
+        // if (!response.ok) {
+        //     // save the response to a file
+        //     fs.writeFileSync(`/tmp/canon-${Date.now()}.json`, JSON.stringify(response, null, 2));
+        //     // save the status text to a file
+        //     fs.writeFileSync(`/tmp/canon-${Date.now()}.status`, response.statusText);
+        //     throw new Error(`Failed to download image: ${response.statusText}`);
+        // }
 
         return response.blob();
     }
@@ -843,6 +858,111 @@ export class Canon extends Camera {
         }
     }
 
+    /**
+     * Get the exposure compensation setting
+     * 
+     * Makes a GET request to /shooting/settings/exposure to retrieve the current exposure compensation value and available options
+     * 
+     * @returns {Promise<CanonExposureCompensationSetting>} Object containing current exposure compensation value and available options
+     * Example:
+     * {
+     *   "value": "+0.0",
+     *   "ability": ["-3.0", "-2_2/3", "-2_1/3", "-2.0", "-1_2/3", "-1_1/3", "-1.0", 
+     *               "-0_2/3", "-0_1/3", "+0.0", "+0_1/3", "+0_2/3", "+1.0",
+     *               "+1_1/3", "+1_2/3", "+2.0", "+2_1/3", "+2_2/3", "+3.0"]
+     * }
+     */
+    async getExposureCompensationSetting(): Promise<CanonExposureCompensationSetting> {
+        const endpoint = this.getFeatureUrl('shooting/settings/exposure');
+
+        if (!endpoint) {
+            throw new Error('Exposure compensation setting feature not found');
+        }
+
+        const response = await fetch(endpoint.path);
+
+        return response.json();
+    }
+    
+
+    /**
+     * Set the exposure compensation setting
+     * 
+     * Makes a PUT request to /shooting/settings/exposurecompensation to set the exposure compensation value
+     * 
+     * @param value - The exposure compensation value to set (e.g. "+0.0", "-1.0", etc)
+     * @returns {Promise<any>} Response from the camera
+     */
+    async setExposureCompensationSetting(value: string): Promise<any> {
+        const endpoint = this.getFeatureUrl('shooting/settings/exposure');
+
+        if (!endpoint) {
+            throw new Error('Exposure compensation setting feature not found');
+        }
+
+        const body = {
+            value,
+        };
+
+        const response = await fetch(endpoint.path, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+        });
+
+        return response.json();
+    }
+
+
+    /**
+     * Get the white balance setting
+     * 
+     * Makes a GET request to /shooting/settings/wb to get the current white balance value and available options
+     * 
+     * @returns {Promise<{value: string, ability: string[]}>} Object containing current value and array of possible values
+     */
+    async getWhiteBalanceSetting(): Promise<CanonWhiteBalanceSetting> {
+        const endpoint = this.getFeatureUrl('shooting/settings/wb');
+
+        if (!endpoint) {
+            throw new Error('White balance setting feature not found');
+        }
+
+        const response = await fetch(endpoint.path);
+        return response.json();
+    }
+
+    /**
+     * Set the white balance setting
+     * 
+     * Makes a PUT request to /shooting/settings/wb to set the white balance value
+     * 
+     * @param value - The white balance value to set (e.g. "auto", "daylight", "shade", etc)
+     * @returns {Promise<any>} Response from the camera
+     */
+    async setWhiteBalanceSetting(value: string): Promise<any> {
+        const endpoint = this.getFeatureUrl('shooting/settings/wb');
+
+        if (!endpoint) {
+            throw new Error('White balance setting feature not found');
+        }
+
+        const body = {
+            value
+        };
+
+        const response = await fetch(endpoint.path, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+        });
+
+        return response.json();
+    }
     async getShootingSettings(): Promise<any> {
         const endpoint = this.getFeatureUrl('shooting/settings');
 
@@ -870,10 +990,8 @@ export class Canon extends Camera {
         const path = addedcontents.filter((ad) => ad.endsWith('.JPG'))[0];
         const image = await this.downloadImage(path, 'main');
         const buffer = await image.arrayBuffer();
-
-        // save the buffer to a file
-        fs.writeFileSync(`/tmp/image-${Date.now()}.jpg`, Buffer.from(buffer));
-        return Buffer.from(buffer).toString('base64');
+        const base64 = Buffer.from(buffer).toString('base64');
+        return base64;
     }
 
     async getIsoSetting(): Promise<any> {

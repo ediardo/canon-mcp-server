@@ -3,6 +3,9 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import fs from 'fs';
 import { Canon, CanonShootingMode } from './Canon.js';
+import path from 'path';
+
+const OUTPUT_DIR = "/Users/ediardo/CanonMCP";
 
 // Create server instance
 const server = new McpServer({
@@ -70,7 +73,7 @@ server.tool(
                     type: 'text',
                     // data: base64,
                     // mimeType: "image/jpeg"
-                    text: JSON.stringify(picture, null, 2),
+                    text: JSON.stringify(picture),
                 },
             ],
         };
@@ -93,7 +96,7 @@ server.tool('get-shooting-settings', 'Get shooting settings', {}, async () => {
         content: [
             {
                 type: 'text',
-                text: JSON.stringify(shootingSettings, null, 2),
+                text: JSON.stringify(shootingSettings),
             },
         ],
     };
@@ -132,7 +135,7 @@ server.tool(
             content: [
                 {
                     type: 'text',
-                    text: JSON.stringify(shootingMode, null, 2),
+                    text: JSON.stringify(shootingMode),
                 },
             ],
         };
@@ -161,7 +164,7 @@ server.tool(
             content: [
                 {
                     type: 'text',
-                    text: JSON.stringify(apertureSetting, null, 2),
+                    text: JSON.stringify(apertureSetting),
                 },
             ],
         };
@@ -190,7 +193,7 @@ server.tool(
             content: [
                 {
                     type: 'text',
-                    text: JSON.stringify(shutterSpeedSetting, null, 2),
+                    text: JSON.stringify(shutterSpeedSetting),
                 },
             ],
         };
@@ -219,7 +222,7 @@ server.tool(
             content: [
                 {
                     type: 'text',
-                    text: JSON.stringify(isoSetting, null, 2),
+                    text: JSON.stringify(isoSetting),
                 },
             ],
         };
@@ -248,7 +251,7 @@ server.tool(
             content: [
                 {
                     type: 'text',
-                    text: JSON.stringify(autoFocusSetting, null, 2),
+                    text: JSON.stringify(autoFocusSetting),
                 },
             ],
         };
@@ -271,7 +274,7 @@ server.tool('get-battery-status', 'Get battery status', {}, async () => {
         content: [
             {
                 type: 'text',
-                text: JSON.stringify(batteryStatus, null, 2),
+                text: JSON.stringify(batteryStatus),
             },
         ],
     };
@@ -293,7 +296,7 @@ server.tool('get-storage-status', 'Get storage status', {}, async () => {
         content: [
             {
                 type: 'text',
-                text: JSON.stringify(storageStatus, null, 2),
+                text: JSON.stringify(storageStatus),
             },
         ],
     };
@@ -315,7 +318,7 @@ server.tool('get-temperature-status', 'Get temperature status', {}, async () => 
         content: [
             {
                 type: 'text',
-                text: JSON.stringify(temperatureStatus, null, 2),
+                text: JSON.stringify(temperatureStatus),
             },
         ],
     };
@@ -337,7 +340,7 @@ server.tool('get-datetime-setting', 'Get date and time setting', {}, async () =>
         content: [
             {
                 type: 'text',
-                text: JSON.stringify(dateTimeSetting, null, 2),
+                text: JSON.stringify(dateTimeSetting),
             },
         ],
     };
@@ -381,7 +384,7 @@ server.tool('start-rtp', 'Start RTP', {}, async () => {
         content: [
             {
                 type: 'text',
-                text: JSON.stringify(rtp, null, 2),
+                text: JSON.stringify(rtp),
             },
         ],
     };
@@ -423,7 +426,7 @@ server.tool('get-lens-information', 'Get lens information', {}, async () => {
         content: [
             {
                 type: 'text',
-                text: JSON.stringify(lensInformation, null, 2),
+                text: JSON.stringify(lensInformation),
             },
         ],
     };
@@ -441,7 +444,9 @@ server.tool('restore-dial-mode', 'Restore dial mode', {}, async () => {
     };
 });
 
-server.tool('get-last-photo', 'Get last photo', {}, async () => {
+server.tool('get-last-photo', 'Get last photo from the camera. The photo is saved to the output directory.', {
+    outputDir: z.string().describe('The output directory to save the photo to.'),
+}, async ({ outputDir }) => {
     if (!canon) {
         return {
             content: [
@@ -454,7 +459,9 @@ server.tool('get-last-photo', 'Get last photo', {}, async () => {
     }
     const lastPhoto = await canon.getLastPhoto();
     // save to file
-
+    const buffer = Buffer.from(lastPhoto, 'base64');
+    const filePath = path.join(OUTPUT_DIR, `${Date.now()}.JPG`);
+    fs.writeFileSync(filePath, buffer);
     return {
         content: [
             {
@@ -503,7 +510,7 @@ server.tool('get-live-view-image', 'Get live view image of the camera. This does
             },
             {
                 type: 'text',
-                text: JSON.stringify(liveViewImage.info, null, 2),
+                text: JSON.stringify(liveViewImage.info),
             },
         ],
     };
@@ -542,7 +549,7 @@ server.tool('get-interval-photos-status', 'Get status of interval photos', {}, a
         content: [
             {
                 type: 'text',
-                text: JSON.stringify(status, null, 2),
+                text: JSON.stringify(status),
             },
         ],
     };
