@@ -37,6 +37,12 @@ export var CanonShootingMode;
     CanonShootingMode["CUSTOM_MODE_1"] = "c1";
     CanonShootingMode["BULB"] = "bulb";
 })(CanonShootingMode || (CanonShootingMode = {}));
+var ShutterButtonAction;
+(function (ShutterButtonAction) {
+    ShutterButtonAction["Release"] = "release";
+    ShutterButtonAction["HalfPress"] = "half_press";
+    ShutterButtonAction["FullPress"] = "full_press";
+})(ShutterButtonAction || (ShutterButtonAction = {}));
 const DELAY_AFTER_SHUTTER_BUTTON = 500;
 export class Canon extends Camera {
     baseUrl;
@@ -126,21 +132,9 @@ export class Canon extends Camera {
     }
     async takePhoto() {
         try {
-            const base64Images = [];
             await this.startEventPolling();
             const response = await this.shutterbutton();
             return response;
-            //await new Promise((resolve) => setTimeout(resolve, DELAY_AFTER_SHUTTER_BUTTON));
-            // const events = await this.startEventPolling();
-            // if (events && events.addedcontents) {
-            //     for (const content of events.addedcontents) {
-            //         const image = await this.downloadImage(content, 'display');
-            //         const arrayBuffer = await image.arrayBuffer();
-            //         const base64 = Buffer.from(arrayBuffer).toString('base64');
-            //         base64Images.push(base64);
-            //     }
-            // }
-            // return base64Images;
         }
         catch (error) {
             throw error;
@@ -168,21 +162,125 @@ export class Canon extends Camera {
         this.intervalInterval = 0;
         this.intervalRepeat = 0;
     }
+    /**
+     * Get the owner name set in the camera
+     *
+     * Makes a GET request to /functions/registeredname/ownername to retrieve the owner name
+     * Note: Not supported on cameras with AVF - check camera compatibility
+     *
+     * @returns {Promise<CanonOwnerName>} Object containing the owner name
+     * Example response:
+     * {
+     *   "ownername": "John Smith"
+     * }
+     * @throws {Error} When owner name feature not found or request fails
+     */
+    async getOwnerName() {
+        const endpoint = this.getFeatureUrl('functions/registeredname/ownername');
+        if (!endpoint) {
+            throw new Error('Owner name feature not found');
+        }
+        const response = await fetch(endpoint.path);
+        if (!response.ok) {
+            throw new Error(`Failed to get owner name: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    }
+    /**
+     * Set the owner name in the camera
+     *
+     * Makes a PUT request to /functions/registeredname/ownername to update the owner name
+     * Note: Not supported on cameras with AVF - check camera compatibility
+     * The camera cannot be operated while updating is in progress.
+     * The set value will be recorded in Exif and other image metadata of shot images.
+     *
+     * @param {string} name - New owner name (ASCII only, max 31 characters)
+     * @returns {Promise<CanonOwnerName>} Object containing the updated owner name
+     * Example response:
+     * {
+     *   "ownername": "John Smith"
+     * }
+     * @throws {Error} When:
+     * - Owner name feature not found
+     * - Invalid parameter (non-ASCII chars, >31 chars)
+     * - Device is busy
+     * - Mode not supported
+     */
+    async setOwnerName(name) {
+        const endpoint = this.getFeatureUrl('functions/registeredname/ownername');
+        if (!endpoint) {
+            throw new Error('Owner name feature not found');
+        }
+        const response = await fetch(endpoint.path, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                ownername: name
+            })
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || `Failed to set owner name: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    }
+    /**
+     * Get the date and time settings from the camera
+     *
+     * Makes a GET request to /functions/datetime to retrieve the current date/time settings
+     *
+     * @returns {Promise<CanonDateTimeSetting>} Object containing date/time settings
+     * Example response:
+     * {
+     *   "datetime": "Tue, 01 Jan 2019 01:23:45 +0900", // RFC1123 compliant date/time string
+     *   "dst": false                                    // Daylight savings time enabled/disabled
+     * }
+     * @throws {Error} When datetime feature not found or request fails
+     */
     async getDateTimeSetting() {
         const url = this.getFeatureUrl('functions/datetime');
         if (!url) {
             throw new Error('Device status datetime feature not found');
         }
         const response = await fetch(url.path);
+        if (!response.ok) {
+            throw new Error(`Failed to get date/time settings: ${response.status} ${response.statusText}`);
+        }
         return response.json();
     }
+    /**
+     * Get battery status information
+     *
+     * Makes a GET request to /devicestatus/battery to retrieve information about the battery mounted in the camera
+     * Note: When battery grip is attached, this API cannot get detailed battery information - use getBatteryList() instead
+     *
+     * @returns {Promise<CanonDeviceStatusBattery>} Object containing battery information
+     * Example response:
+     * {
+     *   "name": "LP-E12",        // Battery name or "unknown"
+     *   "kind": "battery",       // Type: battery, ac_adapter, dc_coupler, batterygrip, not_inserted, unknown
+     *   "level": "full",         // Level: full, high, half, quarter, low, charge, chargestop, chargecomp, none, unknown
+     *   "quality": "good"        // Quality: good, normal, bad, unknown
+     * }
+     * @throws {Error} When battery status feature not found or request fails
+     */
     async getBatteryStatus() {
         const url = this.getFeatureUrl('devicestatus/battery');
         if (!url) {
             throw new Error('Device status battery feature not found');
         }
-        const response = await fetch(url.path);
-        return response.json();
+        try {
+            const response = await fetch(url.path);
+            if (!response.ok) {
+                throw new Error(`Failed to get battery status: ${response.status} ${response.statusText}`);
+            }
+            return response.json();
+        }
+        catch (error) {
+            throw error;
+        }
     }
     async getContentsNumber(directoryPath) {
         const contents = await this.getContents({
@@ -247,8 +345,6 @@ export class Canon extends Camera {
         const response = await fetch(url.path);
         return response.json();
     }
-    // async getLastPhoto(): Promise<CanonContent> {
-    // }
     async getStorageStatus() {
         const url = this.getFeatureUrl('devicestatus/storage');
         if (!url) {
@@ -467,16 +563,16 @@ export class Canon extends Camera {
             url.search = queryString;
         }
         // save the url to a file
-        fs.writeFileSync(`/tmp/canon-${Date.now()}.url`, url.toString());
+        // fs.writeFileSync(`/tmp/canon-${Date.now()}.url`, url.toString());
         const response = await fetch(url.toString());
         // save the response to a file
-        if (!response.ok) {
-            // save the response to a file
-            fs.writeFileSync(`/tmp/canon-${Date.now()}.json`, JSON.stringify(response, null, 2));
-            // save the status text to a file
-            fs.writeFileSync(`/tmp/canon-${Date.now()}.status`, response.statusText);
-            throw new Error(`Failed to download image: ${response.statusText}`);
-        }
+        // if (!response.ok) {
+        //     // save the response to a file
+        //     fs.writeFileSync(`/tmp/canon-${Date.now()}.json`, JSON.stringify(response, null, 2));
+        //     // save the status text to a file
+        //     fs.writeFileSync(`/tmp/canon-${Date.now()}.status`, response.statusText);
+        //     throw new Error(`Failed to download image: ${response.statusText}`);
+        // }
         return response.blob();
     }
     async downloadImages(contents) {
@@ -523,29 +619,111 @@ export class Canon extends Camera {
         const base64 = Buffer.from(buffer).toString('base64');
         return base64;
     }
-    async shutterbutton() {
+    /**
+     * Execute still image shooting
+     *
+     * Makes a POST request to /shooting/control/shutterbutton to take a photo
+     *
+     * @param {boolean} [af=true] - Enable/disable autofocus during shooting
+     * @returns {Promise<object>} Empty object on success
+     * @throws {Error} When:
+     * - Invalid parameter (af is not a boolean)
+     * - Device is busy (during shooting/recording)
+     * - Mode not supported
+     * - Service in preparation
+     * - AF focusing failed
+     * - Cannot write to storage card
+     */
+    async shutterbutton(af = true) {
         const endpoint = this.getFeatureUrl('shooting/control/shutterbutton');
         if (!endpoint) {
             throw new Error('Shutter button feature not found');
         }
         const body = {
-            af: true,
+            af,
         };
         try {
             const response = await fetch(endpoint.path, {
                 method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify(body),
             });
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || `Failed to take photo: ${response.status} ${response.statusText}`);
+            }
             return response.json();
         }
         catch (error) {
-            if (error instanceof Response) {
-                const status = error.status;
-                return { status };
+            if (error instanceof Error) {
+                throw error;
             }
-            throw error;
+            throw new Error('Failed to take photo');
         }
     }
+    /**
+     * Execute manual shutter button control
+     *
+     * Makes a POST request to /shooting/control/shutterbutton/manual to control shutter button
+     *
+     * @param {string} action - Shutter button operation: 'release', 'half_press', or 'full_press'
+     * @param {boolean} [af=true] - Enable/disable autofocus during operation
+     * @returns {Promise<object>} Empty object on success
+     * @throws {Error} When:
+     * - Invalid parameter (action is not valid string, af is not boolean)
+     * - Device is busy (during shooting/recording)
+     * - Mode not supported
+     * - Service in preparation
+     * - AF focusing failed
+     * - Cannot write to storage card
+     */
+    async shutterbuttonManual(action, af = true) {
+        const endpoint = this.getFeatureUrl('shooting/control/shutterbutton/manual');
+        if (!endpoint) {
+            throw new Error('Manual shutter button feature not found');
+        }
+        const body = {
+            action,
+            af,
+        };
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(body),
+            });
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || `Failed to control shutter: ${response.status} ${response.statusText}`);
+            }
+            return response.json();
+        }
+        catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Failed to control shutter');
+        }
+    }
+    /**
+     * Get the aperture (AV) setting
+     *
+     * Makes a GET request to /shooting/settings/av to retrieve the current aperture value and available options
+     *
+     * @returns {Promise<{value: string, ability: string[]}>} Object containing current aperture value and available options
+     * Example:
+     * {
+     *   "value": "f4.0",
+     *   "ability": ["f3.4","f4.0","f4.5","f5.0","f5.6","f6.3","f7.1","f8.0"]
+     * }
+     * @throws {Error} When:
+     * - Device is busy
+     * - Mode not supported (e.g. during movie mode)
+     */
     async getApertureSetting() {
         const endpoint = this.getFeatureUrl('shooting/settings/av');
         if (!endpoint) {
@@ -554,6 +732,19 @@ export class Canon extends Camera {
         const response = await fetch(endpoint.path);
         return response.json();
     }
+    /**
+     * Set the aperture (AV) setting
+     *
+     * Makes a PUT request to /shooting/settings/av to change the aperture value
+     *
+     * @param value - The aperture value to set (e.g. "f5.6", "f8.0", etc)
+     * @returns {Promise<{value: string}>} Object containing the new aperture value
+     * @throws {Error} When:
+     * - Invalid parameter (nonexistent value, non-string value, or value not in ability list)
+     * - Device is busy
+     * - During shooting/recording
+     * - Mode not supported (e.g. movie mode)
+     */
     async setApertureSetting(value) {
         const endpoint = this.getFeatureUrl('shooting/settings/av');
         if (!endpoint) {
@@ -562,9 +753,43 @@ export class Canon extends Camera {
         const body = {
             value,
         };
-        const response = await fetch(endpoint.path, { method: 'PUT', body: JSON.stringify(body) });
-        return response.json();
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'PUT',
+                body: JSON.stringify(body),
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+            if (response.status === 400) {
+                throw new Error('Invalid parameter - value must be a valid aperture setting');
+            }
+            if (response.status === 503) {
+                throw new Error('Device busy - camera is currently shooting or recording');
+            }
+            return response.json();
+        }
+        catch (error) {
+            throw error;
+        }
     }
+    /**
+     * Get the shutter speed setting (TV)
+     *
+     * Makes a GET request to /shooting/settings/tv to retrieve the current shutter speed value and available options
+     *
+     * @returns {Promise<{value: string, ability: string[]}>} Object containing current shutter speed value and available options
+     * Example:
+     * {
+     *   "value": "1/125",
+     *   "ability": ["15\"","13\"","10\"","8\"","6\"","5\"","4\"","3\"2","2\"5","2\"",
+     *               "1\"6","1\"3","1\"","0\"8","0\"6","0\"5","0\"4","0\"3","1/4","1/5",
+     *               "1/6","1/8","1/10","1/13","1/15","1/20","1/25","1/30","1/40","1/50",
+     *               "1/60","1/80","1/100","1/125","1/160","1/200","1/250","1/320","1/400",
+     *               "1/500","1/640","1/800","1/1000","1/1250","1/1600","1/2000"]
+     * }
+     * @throws {Error} When device is busy or mode not supported (e.g. during movie mode)
+     */
     async getShutterSpeedSetting() {
         const endpoint = this.getFeatureUrl('shooting/settings/tv');
         if (!endpoint) {
@@ -575,6 +800,19 @@ export class Canon extends Camera {
         this.shutterSpeedSetting = data.value;
         return this.shutterSpeedSetting;
     }
+    /**
+     * Set the shutter speed (TV) setting
+     *
+     * Makes a PUT request to /shooting/settings/tv to set the shutter speed value
+     *
+     * @param value - The shutter speed value to set (e.g. "1/125", "5\"", etc)
+     * @returns {Promise<{value: string}>} Object containing the new shutter speed value
+     * @throws {Error} When:
+     * - Invalid parameter (nonexistent value, non-string value, or value not in ability list)
+     * - Device is busy
+     * - During shooting/recording
+     * - Mode not supported (e.g. movie mode)
+     */
     async setShutterSpeedSetting(value) {
         const endpoint = this.getFeatureUrl('shooting/settings/tv');
         if (!endpoint) {
@@ -592,6 +830,139 @@ export class Canon extends Camera {
             throw error;
         }
     }
+    /**
+     * Get the exposure compensation setting
+     *
+     * Makes a GET request to /shooting/settings/exposure to retrieve the current exposure compensation value and available options
+     *
+     * @returns {Promise<CanonExposureCompensationSetting>} Object containing current exposure compensation value and available options
+     * Example:
+     * {
+     *   "value": "+0.0",
+     *   "ability": ["-3.0", "-2_2/3", "-2_1/3", "-2.0", "-1_2/3", "-1_1/3", "-1.0",
+     *               "-0_2/3", "-0_1/3", "+0.0", "+0_1/3", "+0_2/3", "+1.0",
+     *               "+1_1/3", "+1_2/3", "+2.0", "+2_1/3", "+2_2/3", "+3.0"]
+     * }
+     */
+    async getExposureCompensationSetting() {
+        const endpoint = this.getFeatureUrl('shooting/settings/exposure');
+        if (!endpoint) {
+            throw new Error('Exposure compensation setting feature not found');
+        }
+        const response = await fetch(endpoint.path);
+        return response.json();
+    }
+    /**
+     * Set the exposure compensation setting
+     *
+     * Makes a PUT request to /shooting/settings/exposurecompensation to set the exposure compensation value
+     *
+     * @param value - The exposure compensation value to set (e.g. "+0.0", "-1.0", etc)
+     * @returns {Promise<any>} Response from the camera
+     */
+    async setExposureCompensationSetting(value) {
+        const endpoint = this.getFeatureUrl('shooting/settings/exposure');
+        if (!endpoint) {
+            throw new Error('Exposure compensation setting feature not found');
+        }
+        const body = {
+            value,
+        };
+        const response = await fetch(endpoint.path, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+        });
+        return response.json();
+    }
+    /**
+     * Get the white balance setting
+     *
+     * Makes a GET request to /shooting/settings/wb to get the current white balance value and available options
+     *
+     * @returns {Promise<{value: string, ability: string[]}>} Object containing current value and array of possible values
+     */
+    async getWhiteBalanceSetting() {
+        const endpoint = this.getFeatureUrl('shooting/settings/wb');
+        if (!endpoint) {
+            throw new Error('White balance setting feature not found');
+        }
+        const response = await fetch(endpoint.path);
+        return response.json();
+    }
+    /**
+     * Set the white balance setting
+     *
+     * Makes a PUT request to /shooting/settings/wb to set the white balance value
+     *
+     * @param value - The white balance value to set (e.g. "auto", "daylight", "shade", etc)
+     * @returns {Promise<any>} Response from the camera
+     */
+    async setWhiteBalanceSetting(value) {
+        const endpoint = this.getFeatureUrl('shooting/settings/wb');
+        if (!endpoint) {
+            throw new Error('White balance setting feature not found');
+        }
+        const body = {
+            value,
+        };
+        const response = await fetch(endpoint.path, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+        });
+        return response.json();
+    }
+    /**
+     * Get the color temperature setting
+     *
+     * Makes a GET request to /shooting/settings/colortemperature to get the current value and available range
+     *
+     * @returns {Promise<CanonColorTemperatureSetting>} Object containing current value and range
+     */
+    async getColorTemperatureSetting() {
+        const endpoint = this.getFeatureUrl('shooting/settings/colortemperature');
+        if (!endpoint) {
+            throw new Error('Color temperature setting feature not found');
+        }
+        const response = await fetch(endpoint.path);
+        return response.json();
+    }
+    /**
+     * Set the color temperature value
+     *
+     * Makes a PUT request to /shooting/settings/colortemperature to set the color temperature
+     *
+     * @param value - The color temperature value to set (in Kelvin)
+     * @returns {Promise<any>} Response from the camera
+     */
+    async setColorTemperatureSetting(value) {
+        const endpoint = this.getFeatureUrl('shooting/settings/colortemperature');
+        if (!endpoint) {
+            throw new Error('Color temperature setting feature not found');
+        }
+        const body = {
+            value,
+        };
+        const response = await fetch(endpoint.path, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+        });
+        return response.json();
+    }
+    /**
+     * Get all of the present values and ability values of the shooting parameters that can be
+     * acquired by Ver.1.0.0 APIs supported by the Canon camera.
+     *
+     * @returns {Promise<Partial<CanonShootingSettings>>} Object containing all shooting settings
+     */
     async getShootingSettings() {
         const endpoint = this.getFeatureUrl('shooting/settings');
         if (!endpoint) {
@@ -611,10 +982,25 @@ export class Canon extends Camera {
         const path = addedcontents.filter((ad) => ad.endsWith('.JPG'))[0];
         const image = await this.downloadImage(path, 'main');
         const buffer = await image.arrayBuffer();
-        // save the buffer to a file
-        fs.writeFileSync(`/tmp/image-${Date.now()}.jpg`, Buffer.from(buffer));
-        return Buffer.from(buffer).toString('base64');
+        const base64 = Buffer.from(buffer).toString('base64');
+        return base64;
     }
+    /**
+     * Get the ISO setting
+     *
+     * Makes a GET request to /shooting/settings/iso to retrieve the current ISO value and available options
+     *
+     * @returns {Promise<{value: string, ability: string[]}>} Object containing current ISO value and available options
+     * Example:
+     * {
+     *   "value": "100",
+     *   "ability": ["auto", "100", "125", "160", "200", "250", "320", "400", "500",
+     *               "640", "800", "1000", "1250", "1600", "2000", "2500", "3200"]
+     * }
+     * @throws {Error} When:
+     * - Device is busy
+     * - Mode not supported (e.g. during movie mode)
+     */
     async getIsoSetting() {
         const endpoint = this.getFeatureUrl('shooting/settings/iso');
         if (!endpoint) {
@@ -625,6 +1011,19 @@ export class Canon extends Camera {
         this.isoSetting = data.value;
         return this.isoSetting;
     }
+    /**
+     * Set the ISO setting
+     *
+     * Makes a PUT request to /shooting/settings/iso to change the ISO value
+     *
+     * @param value - The ISO value to set (e.g. "auto", "100", "200", etc)
+     * @returns {Promise<{value: string}>} Object containing the new ISO value
+     * @throws {Error} When:
+     * - Invalid parameter (nonexistent value, non-string value, or value not in ability list)
+     * - Device is busy
+     * - During shooting/recording
+     * - Mode not supported (e.g. during movie mode)
+     */
     async setIsoSetting(value) {
         const endpoint = this.getFeatureUrl('shooting/settings/iso');
         if (!endpoint) {
@@ -633,21 +1032,35 @@ export class Canon extends Camera {
         const body = {
             value,
         };
-        const response = await fetch(endpoint.path, { method: 'PUT', body: JSON.stringify(body) });
+        const response = await fetch(endpoint.path, {
+            method: 'PUT',
+            body: JSON.stringify(body),
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
         this.isoSetting = value;
         return response.json();
     }
     /**
-     * Get the auto focus setting
+     * Get the present value of the AF operation setting
      *
-     * @returns {Promise<{value: string, ability: string[]}>} Object containing current auto focus value and available options
+     * Makes a GET request to /shooting/settings/afoperation to retrieve the current AF operation value
+     *
+     * @returns {Promise<{value: string, ability: string[]}>} Object containing current AF operation value and available options
      * Example:
      * {
-     *   "value": "oneshot",
-     *   "ability": ["oneshot", "servo"]
+     *   "value": "oneshot",  // One-shot AF
+     *   "ability": ["oneshot", "servo", "aifocus", "manual"]
      * }
+     *
+     * Possible values:
+     * - oneshot: One-shot AF
+     * - servo: Servo AF
+     * - aifocus: AI Focus AF
+     * - manual: Manual focus
      */
-    async getAutoFocusSetting() {
+    async getAutofocusOperationSetting() {
         const endpoint = this.getFeatureUrl('shooting/settings/afoperation');
         if (!endpoint) {
             throw new Error('Auto focus setting feature not found');
@@ -663,12 +1076,18 @@ export class Canon extends Camera {
         }
     }
     /**
-     * Set the auto focus setting
+     * Set the AF operation setting
      *
-     * @param value
-     * @returns
+     * Makes a PUT request to /shooting/settings/afoperation to change the autofocus mode
+     *
+     * @param value - The AF operation value to set (e.g. "oneshot", "servo", "aifocus", "manual")
+     * @returns {Promise<{value: string}>} Object containing the new AF operation value
+     * @throws {Error} When:
+     * - Invalid parameter (nonexistent value, non-string value, or value not in ability list)
+     * - Device is busy
+     * - During shooting/recording
      */
-    async setAutoFocusSetting(value) {
+    async setAutofocusOperationSetting(value) {
         const endpoint = this.getFeatureUrl('shooting/settings/afoperation');
         if (!endpoint) {
             throw new Error('Auto focus setting feature not found');
@@ -676,10 +1095,58 @@ export class Canon extends Camera {
         const body = {
             value,
         };
-        const response = await fetch(endpoint.path, { method: 'PUT', body: JSON.stringify(body) });
-        this.autoFocusSetting = value;
-        return response.json();
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'PUT',
+                body: JSON.stringify(body),
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+            if (response.status === 400) {
+                throw new Error('Invalid parameter - value must be a valid AF operation setting');
+            }
+            if (response.status === 503) {
+                throw new Error('Device busy - camera is currently shooting or recording');
+            }
+            const data = await response.json();
+            this.autoFocusSetting = data.value;
+            return data;
+        }
+        catch (error) {
+            throw error;
+        }
     }
+    /**
+     * Get the shooting mode from the camera's mode dial
+     *
+     * Makes a GET request to /shooting/settings/shootingmodedial to retrieve the current shooting mode
+     *
+     * @returns {Promise<string>} The current shooting mode value
+     * Example values:
+     * - "m" - Manual exposure
+     * - "av" - Aperture priority AE
+     * - "tv" - Shutter speed priority
+     * - "p" - Program AE
+     * - "auto" - Auto
+     * - "plus_movie_auto" - Plus movie auto
+     * - "panoramic_shot" - Panoramic shot
+     * - "sports" - Sports
+     * - "fv" - Flexible AE
+     * - "a+" - Scene intelligent auto
+     * - "scn" - Special scene
+     * - "creativefilter" - Creative filter
+     * - "movie" - Movie
+     * - "c3" - Custom shooting mode 3
+     * - "c2" - Custom shooting mode 2
+     * - "c1" - Custom shooting mode 1
+     * - "bulb" - Bulb
+     *
+     * @throws {Error} When:
+     * - Camera does not have a shooting mode dial
+     * - Feature not found
+     * - Device is busy
+     */
     async getShootingMode() {
         const endpoint = this.getFeatureUrl('shooting/settings/shootingmodedial');
         if (!endpoint) {
@@ -695,6 +1162,21 @@ export class Canon extends Camera {
             throw error;
         }
     }
+    /**
+     * Set the shooting mode
+     *
+     * Makes a PUT request to /shooting/settings/shootingmodedial to change the shooting mode.
+     * Note: You must call setIgnoreShootingModeDial(true) before using this method.
+     *
+     * @param mode - The shooting mode value to set (e.g. "p", "av", "tv", etc)
+     * @returns {Promise<{value: string}>} Object containing the new shooting mode value
+     * @throws {Error} When:
+     * - Invalid parameter (nonexistent value, non-string value, or value not in ability list)
+     * - Device is busy
+     * - During shooting/recording
+     * - Mode not supported
+     * - Ignore shooting mode dial mode not started
+     */
     async setShootingMode(mode) {
         const endpoint = this.getFeatureUrl('shooting/settings/shootingmode');
         if (!endpoint) {
@@ -703,7 +1185,61 @@ export class Canon extends Camera {
         const body = {
             value: mode,
         };
-        const response = await fetch(endpoint.path, { method: 'PUT', body: JSON.stringify(body) });
+        const response = await fetch(endpoint.path, {
+            method: 'PUT',
+            body: JSON.stringify(body),
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+        return response.json();
+    }
+    /**
+     * Get the shutter mode setting
+     *
+     * Makes a GET request to /shooting/settings/shuttermode to retrieve the current shutter mode value and available options
+     *
+     * @returns {Promise<{value: string, ability: string[]}>} Object containing current shutter mode value and available options
+     * Example:
+     * {
+     *   "value": "elec_1st_curtain",
+     *   "ability": ["elec_1st_curtain", "mechanical", "electronic"]
+     * }
+     * @throws {Error} When device is busy or during shooting/recording
+     */
+    async getShutterMode() {
+        const endpoint = this.getFeatureUrl('shooting/settings/shuttermode');
+        if (!endpoint) {
+            throw new Error('Shutter mode feature not found');
+        }
+        const response = await fetch(endpoint.path);
+        const data = await response.json();
+        return data;
+    }
+    /**
+     * Set the shutter mode setting
+     *
+     * Makes a PUT request to /shooting/settings/shuttermode to change the shutter mode
+     *
+     * @param {string} value - The shutter mode value to set (e.g. "electronic", "mechanical", "elec_1st_curtain")
+     * @returns {Promise<{value: string}>} Object containing the new shutter mode value
+     * @throws {Error} When device is busy, during shooting/recording, or if invalid value provided
+     */
+    async setShutterMode(value) {
+        const endpoint = this.getFeatureUrl('shooting/settings/shuttermode');
+        if (!endpoint) {
+            throw new Error('Shutter mode feature not found');
+        }
+        const body = {
+            value,
+        };
+        const response = await fetch(endpoint.path, {
+            method: 'PUT',
+            body: JSON.stringify(body),
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
         return response.json();
     }
     async getIgnoreShootingModeDial() {

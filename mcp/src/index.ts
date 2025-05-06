@@ -5,13 +5,13 @@ import fs from 'fs';
 import { Canon, CanonShootingMode } from './Canon.js';
 import path from 'path';
 
-const OUTPUT_DIR = "/Users/ediardo/CanonMCP";
+const OUTPUT_DIR = '/Users/ediardo/CanonMCP';
 
 // Create server instance
 const server = new McpServer({
     name: 'canon',
     version: '1.0.0',
-    
+
     capabilities: {
         resources: {},
         tools: {},
@@ -80,27 +80,32 @@ server.tool(
     }
 );
 
-server.tool('get-shooting-settings', 'Get shooting settings', {}, async () => {
-    if (!canon) {
+server.tool(
+    'get-shooting-settings',
+    'Get all of the present values and ability values of the shooting parameters that can be acquired and supported by the Canon camera.',
+    {},
+    async () => {
+        if (!canon) {
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: 'Canon camera not connected. Please connect first.',
+                    },
+                ],
+            };
+        }
+        const shootingSettings = await canon.getShootingSettings();
         return {
             content: [
                 {
                     type: 'text',
-                    text: 'Canon camera not connected. Please connect first.',
+                    text: JSON.stringify(shootingSettings),
                 },
             ],
         };
     }
-    const shootingSettings = await canon.getShootingSettings();
-    return {
-        content: [
-            {
-                type: 'text',
-                text: JSON.stringify(shootingSettings),
-            },
-        ],
-    };
-});
+);
 
 server.tool(
     'change-shooting-mode',
@@ -144,7 +149,7 @@ server.tool(
 
 server.tool(
     'set-aperture-setting',
-    'Set aperture setting',
+    'Set the aperture (AV) setting',
     {
         value: z.string(),
     },
@@ -173,7 +178,7 @@ server.tool(
 
 server.tool(
     'set-shutter-speed-setting',
-    'Set shutter speed setting',
+    'Set the shutter speed (TV) setting',
     {
         value: z.string(),
     },
@@ -202,7 +207,7 @@ server.tool(
 
 server.tool(
     'set-iso-setting',
-    'Set ISO setting',
+    'Set the ISO setting',
     {
         value: z.string(),
     },
@@ -229,9 +234,31 @@ server.tool(
     }
 );
 
+server.tool('get-autofocus-setting', 'Get the present value of the AF operation setting.', {}, async () => {
+    if (!canon) {
+        return {
+            content: [
+                {
+                    type: 'text',
+                    text: 'Canon camera not connected. Please connect first.',
+                },
+            ],
+        };
+    }
+    const autoFocusSetting = await canon.getAutofocusOperationSetting();
+    return {
+        content: [
+            {
+                type: 'text',
+                text: JSON.stringify(autoFocusSetting),
+            },
+        ],
+    };
+});
+
 server.tool(
-    'set-auto-focus-setting',
-    'Set auto focus setting',
+    'set-autofocus-setting',
+    'Set the AF operation setting',
     {
         value: z.string(),
     },
@@ -246,7 +273,7 @@ server.tool(
                 ],
             };
         }
-        const autoFocusSetting = await canon.setAutoFocusSetting(value);
+        const autoFocusSetting = await canon.setAutofocusOperationSetting(value);
         return {
             content: [
                 {
@@ -258,7 +285,7 @@ server.tool(
     }
 );
 
-server.tool('get-battery-status', 'Get battery status', {}, async () => {
+server.tool('get-battery-status', 'Get battery status information', {}, async () => {
     if (!canon) {
         return {
             content: [
@@ -444,36 +471,41 @@ server.tool('restore-dial-mode', 'Restore dial mode', {}, async () => {
     };
 });
 
-server.tool('get-last-photo', 'Get last photo from the camera. The photo is saved to the output directory.', {
-    outputDir: z.string().describe('The output directory to save the photo to.'),
-}, async ({ outputDir }) => {
-    if (!canon) {
+server.tool(
+    'get-last-photo',
+    'Get last photo from the camera. The photo is saved to the output directory.',
+    {
+        outputDir: z.string().describe('The output directory to save the photo to.'),
+    },
+    async ({ outputDir }) => {
+        if (!canon) {
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: 'Canon camera not connected. Please connect first.',
+                    },
+                ],
+            };
+        }
+        const lastPhoto = await canon.getLastPhoto();
+        // save to file
+        const buffer = Buffer.from(lastPhoto, 'base64');
+        const filePath = path.join(OUTPUT_DIR, `${Date.now()}.JPG`);
+        fs.writeFileSync(filePath, buffer);
         return {
             content: [
                 {
-                    type: 'text',
-                    text: 'Canon camera not connected. Please connect first.',
+                    type: 'image',
+                    data: lastPhoto,
+                    mimeType: 'image/jpeg',
+                    // type: "text",
+                    // text: JSON.stringify(lastPhoto, null, 2),
                 },
             ],
         };
     }
-    const lastPhoto = await canon.getLastPhoto();
-    // save to file
-    const buffer = Buffer.from(lastPhoto, 'base64');
-    const filePath = path.join(OUTPUT_DIR, `${Date.now()}.JPG`);
-    fs.writeFileSync(filePath, buffer);
-    return {
-        content: [
-            {
-                type: 'image',
-                data: lastPhoto,
-                mimeType: 'image/jpeg',
-                // type: "text",
-                // text: JSON.stringify(lastPhoto, null, 2),
-            },
-        ],
-    };
-});
+);
 
 server.tool('get-live-view-image', 'Get live view image of the camera. This does not take a photo.', {}, async () => {
     if (!canon) {
@@ -500,7 +532,6 @@ server.tool('get-live-view-image', 'Get live view image of the camera. This does
         };
     }
 
-
     return {
         content: [
             {
@@ -516,32 +547,38 @@ server.tool('get-live-view-image', 'Get live view image of the camera. This does
     };
 });
 
-server.tool('start-interval-photos', 'Start taking photos at regular intervals', {
-    interval: z.number().describe('Time between photos in milliseconds'),
-    repeat: z.number().describe('Number of photos to take. Set to 0 for unlimited photos.'),
-}, async ({ interval, repeat }) => {
-    if (!canon) {
+server.tool(
+    'start-interval-photos',
+    'Start taking photos at regular intervals',
+    {
+        interval: z.number().describe('Time between photos in milliseconds'),
+        repeat: z.number().describe('Number of photos to take. Set to 0 for unlimited photos.'),
+    },
+    async ({ interval, repeat }) => {
+        if (!canon) {
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: 'Canon camera not connected. Please connect first.',
+                    },
+                ],
+                isError: true,
+            };
+        }
+        canon.startIntervalPhotos(interval, repeat);
         return {
             content: [
                 {
                     type: 'text',
-                    text: 'Canon camera not connected. Please connect first.',
+                    text: `Started interval photos: Taking ${
+                        repeat === 0 ? 'unlimited' : repeat
+                    } photos every ${interval}ms`,
                 },
             ],
-            isError: true,
         };
     }
- canon.startIntervalPhotos(interval, repeat);
-    return {
-        content: [
-            {
-                type: 'text',
-                text: `Started interval photos: Taking ${repeat === 0 ? 'unlimited' : repeat} photos every ${interval}ms`,
-            },
-        ],
-    };
-});
-
+);
 
 server.tool('get-interval-photos-status', 'Get status of interval photos', {}, async () => {
     const status = await canon.getIntervalPhotosStatus();
@@ -566,7 +603,6 @@ server.tool('stop-interval-photos', 'Stop taking photos at regular intervals', {
         ],
     };
 });
-
 
 async function main() {
     const transport = new StdioServerTransport();
