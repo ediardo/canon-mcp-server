@@ -108,7 +108,7 @@ interface CanonExposureCompensationSetting {
     ability: string[];
 }
 
-interface CanonWhiteBalanceSetting {
+export interface CanonWhiteBalanceSetting {
     value: string;
     ability: string[];
 }
@@ -336,12 +336,37 @@ enum ShutterButtonAction {
     FullPress = 'full_press'
 }
 
+export enum CanonShutterMode {
+    ELECTRONIC_FIRST_CURTAIN = 'elec_1st_curtain',
+    MECHANICAL = 'mechanical', 
+    ELECTRONIC = 'electronic'
+}
+
+export enum CanonWhiteBalanceMode {
+    AUTO = 'auto',              // Auto: Ambience priority
+    AWB_WHITE = 'awbwhite',    // Auto: White priority
+    DAYLIGHT = 'daylight',      // Sunlight
+    SHADE = 'shade',            // Shade
+    CLOUDY = 'cloudy',          // Cloudy
+    TUNGSTEN = 'tungsten',      // Incandescent light bulb
+    WHITE_FLUORESCENT = 'whitefluorescent', // White fluorescent light
+    FLASH = 'flash',            // Flash
+    CUSTOM = 'custom',          // Custom
+    COLOR_TEMP = 'colortemp'    // Color temp.
+}
+
+
 interface CanonConnectOptions {
     startLiveView?: boolean;
 }
 
 interface CanonOwnerName {
     name: string;
+}
+
+interface CanonAutoFocusSetting {
+    value: string;
+    ability: string[];
 }
 
 const DELAY_AFTER_SHUTTER_BUTTON = 500;
@@ -1383,9 +1408,9 @@ export class Canon extends Camera {
      * Makes a PUT request to /shooting/settings/wb to set the white balance value
      *
      * @param value - The white balance value to set (e.g. "auto", "daylight", "shade", etc)
-     * @returns {Promise<any>} Response from the camera
+     * @returns {Promise<Pick<CanonWhiteBalanceSetting, 'value'>>} Response from the camera
      */
-    async setWhiteBalanceSetting(value: string): Promise<any> {
+    async setWhiteBalanceSetting(value: CanonWhiteBalanceMode): Promise<Pick<CanonWhiteBalanceSetting, 'value'>> {
         const endpoint = this.getFeatureUrl('shooting/settings/wb');
 
         if (!endpoint) {
@@ -1431,9 +1456,9 @@ export class Canon extends Camera {
      * Makes a PUT request to /shooting/settings/colortemperature to set the color temperature
      *
      * @param value - The color temperature value to set (in Kelvin)
-     * @returns {Promise<any>} Response from the camera
+     * @returns {Promise<Pick<CanonColorTemperatureSetting, 'value'>>} Response from the camera
      */
-    async setColorTemperatureSetting(value: number): Promise<any> {
+    async setColorTemperatureSetting(value: number): Promise<Pick<CanonColorTemperatureSetting, 'value'>> {
         const endpoint = this.getFeatureUrl('shooting/settings/colortemperature');
 
         if (!endpoint) {
@@ -1589,9 +1614,9 @@ export class Canon extends Camera {
 
             const data = await response.json();
 
-            this.autoFocusSetting = data.value;
+            this.autoFocusSetting = data;
 
-            return this.autoFocusSetting;
+            return data;
         } catch (error) {
             throw error;
         }
@@ -1767,7 +1792,7 @@ export class Canon extends Camera {
      * @returns {Promise<{value: string}>} Object containing the new shutter mode value
      * @throws {Error} When device is busy, during shooting/recording, or if invalid value provided
      */
-    async setShutterMode(value: string): Promise<any> {
+    async setShutterMode(value: CanonShutterMode): Promise<any> {
         const endpoint = this.getFeatureUrl('shooting/settings/shuttermode');
 
         if (!endpoint) {

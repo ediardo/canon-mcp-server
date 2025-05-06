@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import fs from 'fs';
-import { Canon, CanonShootingMode } from './Canon.js';
+import { Canon, CanonShootingMode, CanonShutterMode, CanonWhiteBalanceMode } from './Canon.js';
 import path from 'path';
 
 const OUTPUT_DIR = '/Users/ediardo/CanonMCP';
@@ -109,7 +109,7 @@ server.tool(
 
 server.tool(
     'change-shooting-mode',
-    'Change shooting mode ',
+    'Change shooting mode of the camera (e.g. "m" for Manual, "av" for Aperture Priority, "tv" for Shutter Priority, "p" for Program AE, "fv" for Flexible Priority, "a+" for Scene Intelligent Auto, "c3/c2/c1" for Custom Modes, "bulb" for Bulb)',
     {
         mode: z.nativeEnum(CanonShootingMode).optional(),
     },
@@ -603,6 +603,76 @@ server.tool('stop-interval-photos', 'Stop taking photos at regular intervals', {
         ],
     };
 });
+
+server.tool('get-owner-name', 'Get the owner name set in the camera', {}, async () => {
+    const ownerName = await canon.getOwnerName();
+    return {
+        content: [{ type: 'text', text: JSON.stringify(ownerName) }],
+    };
+});
+
+server.tool('set-owner-name', 'Set the owner name in the camera', {
+    name: z.string()
+        .regex(/^[\x00-\x7F]*$/, 'Owner name must contain only ASCII characters')
+        .max(31, 'Owner name cannot exceed 31 characters')
+        .describe('The name to set as the owner name'),
+}, async ({ name }) => {
+    await canon.setOwnerName(name);
+    return {
+        content: [{ type: 'text', text: `Owner name set to ${name}` }],
+    };
+});
+
+server.tool('get-shutter-mode', 'Get the shutter mode release of the camera', {}, async () => {
+    const shutterMode = await canon.getShutterMode();
+    return {
+        content: [{ type: 'text', text: JSON.stringify(shutterMode) }],
+    };
+});
+
+server.tool('set-shutter-mode', 'Set the shutter mode release of the camera', {
+    mode: z.nativeEnum(CanonShutterMode).describe('The mode to set the shutter mode to'),
+}, async ({ mode }) => {
+    await canon.setShutterMode(mode);
+    return {
+        content: [{ type: 'text', text: `Shutter mode set to ${mode}` }],
+    };
+});
+
+server.tool('get-color-temperature', 'Get the color temperature of the camera', {}, async () => {
+    const colorTemperature = await canon.getColorTemperatureSetting();
+    return {
+        content: [{ type: 'text', text: JSON.stringify(colorTemperature) }],
+    };
+});
+
+server.tool('set-color-temperature', 'Set the color temperature of the camera', {
+    value: z.number().describe('The value to set the color temperature to'),
+}, async ({ value }) => {
+    const colorTemperature = await canon.setColorTemperatureSetting(value);
+
+    return {
+        content: [{ type: 'text', text: JSON.stringify(colorTemperature) }],
+    };
+});
+
+server.tool('get-white-balance', 'Get the white balance of the camera', {}, async () => {
+    const whiteBalance = await canon.getWhiteBalanceSetting();
+    return {
+        content: [{ type: 'text', text: JSON.stringify(whiteBalance) }],
+    };
+});
+
+server.tool('set-white-balance', 'Set the white balance of the camera', {
+    value: z.nativeEnum(CanonWhiteBalanceMode).describe('The value to set the white balance to'),
+}, async ({ value }) => {
+    const whiteBalance = await canon.setWhiteBalanceSetting(value);
+    return {
+        content: [{ type: 'text', text: JSON.stringify(whiteBalance) }],
+    };
+});
+
+
 
 async function main() {
     const transport = new StdioServerTransport();
