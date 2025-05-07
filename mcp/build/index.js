@@ -1,9 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import fs from 'fs';
 import { Canon, CanonShootingMode, CanonShutterMode, CanonWhiteBalanceMode } from './Canon.js';
-import path from 'path';
+import sharp from 'sharp';
 const OUTPUT_DIR = '/Users/ediardo/CanonMCP';
 // Create server instance
 const server = new McpServer({
@@ -422,15 +421,23 @@ server.tool('get-last-photo', 'Get last photo from the camera. The photo is save
         };
     }
     const lastPhoto = await canon.getLastPhoto();
-    // save to file
     const buffer = Buffer.from(lastPhoto, 'base64');
-    const filePath = path.join(OUTPUT_DIR, `${Date.now()}.JPG`);
-    fs.writeFileSync(filePath, buffer);
+    const resizedImage = await sharp(buffer)
+        .resize(1024, 1024, {
+        fit: 'inside',
+        withoutEnlargement: true
+    })
+        .toBuffer();
+    const resizedBase64 = resizedImage.toString('base64');
+    // // save to file
+    // const buffer = Buffer.from(lastPhoto, 'base64');
+    // const filePath = path.join(OUTPUT_DIR, `${Date.now()}.JPG`);
+    // fs.writeFileSync(filePath, buffer);
     return {
         content: [
             {
                 type: 'image',
-                data: lastPhoto,
+                data: resizedBase64,
                 mimeType: 'image/jpeg',
                 // type: "text",
                 // text: JSON.stringify(lastPhoto, null, 2),
@@ -579,6 +586,12 @@ server.tool('set-white-balance', 'Set the white balance of the camera', {
     return {
         content: [{ type: 'text', text: JSON.stringify(whiteBalance) }],
     };
+});
+server.tool('execute-autofocus', 'Execute autofocus. This API only issues a focusing instruction and does not return the focusing results. For the focusing results, check the focus frame information in the Live View incidental information.', {
+    action: z.enum(['start', 'stop']).describe('The action to execute'),
+}, async ({ action }) => {
+    const autofocus = await canon.executeAutofocus(action);
+    return { content: [{ type: 'text', text: JSON.stringify(autofocus) }] };
 });
 async function main() {
     const transport = new StdioServerTransport();

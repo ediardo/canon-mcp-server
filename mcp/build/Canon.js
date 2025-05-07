@@ -1,6 +1,4 @@
 import { Camera } from './Camera.js';
-import * as fs from 'fs';
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 var CanonContentType;
 (function (CanonContentType) {
     CanonContentType["ALL"] = "all";
@@ -60,7 +58,7 @@ export var CanonWhiteBalanceMode;
     CanonWhiteBalanceMode["WHITE_FLUORESCENT"] = "whitefluorescent";
     CanonWhiteBalanceMode["FLASH"] = "flash";
     CanonWhiteBalanceMode["CUSTOM"] = "custom";
-    CanonWhiteBalanceMode["COLOR_TEMP"] = "colortemp"; // Color temp.
+    CanonWhiteBalanceMode["COLOR_TEMP"] = "colortemp";
 })(CanonWhiteBalanceMode || (CanonWhiteBalanceMode = {}));
 const DELAY_AFTER_SHUTTER_BUTTON = 500;
 export class Canon extends Camera {
@@ -136,6 +134,58 @@ export class Canon extends Camera {
         }
         catch (error) {
             throw error;
+        }
+    }
+    /**
+     * Processes a live view stream from the camera by reading chunks of JPEG data.
+     * Each chunk starts with a hex size followed by newline, then contains the JPEG bytes.
+     * Calls the provided callback with each JPEG frame as a Blob.
+     *
+     * @param stream - ReadableStream containing chunked JPEG data from the camera
+     * @param onFrame - Callback function that receives each JPEG frame as a Blob
+     * @returns Promise that resolves when the stream is fully processed
+     */
+    static async processLiveViewStream(stream, onFrame) {
+        const reader = stream.getReader();
+        let buffer = new Uint8Array();
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done)
+                break;
+            if (!value)
+                continue;
+            // Append to buffer
+            const newBuffer = new Uint8Array(buffer.length + value.length);
+            newBuffer.set(buffer);
+            newBuffer.set(value, buffer.length);
+            buffer = newBuffer;
+            // Scan for JPEG start (0xFFD8) and end (0xFFD9) markers
+            let start = buffer.indexOf(0xFF);
+            while (start !== -1 && start < buffer.length - 1) {
+                if (buffer[start + 1] === 0xD8)
+                    break; // Found JPEG SOI
+                start = buffer.indexOf(0xFF, start + 1);
+            }
+            if (start === -1) {
+                buffer = new Uint8Array(); // Clear buffer if no SOI
+                continue;
+            }
+            // Find EOI (0xFFD9)
+            let end = start + 2;
+            while (end < buffer.length - 1) {
+                if (buffer[end] === 0xFF && buffer[end + 1] === 0xD9) {
+                    end += 2; // Include EOI
+                    const jpegData = buffer.slice(start, end);
+                    onFrame(new Blob([jpegData], { type: 'image/jpeg' }));
+                    buffer = buffer.slice(end); // Trim processed data
+                    start = buffer.indexOf(0xFF); // Look for next JPEG
+                    end = start + 2;
+                }
+                else {
+                    end++;
+                }
+            }
+            // If no full JPEG found, keep buffer and continue
         }
     }
     static getSDPIpAddress(sdp) {
@@ -233,11 +283,11 @@ export class Canon extends Camera {
         const response = await fetch(endpoint.path, {
             method: 'PUT',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                ownername: name
-            })
+                ownername: name,
+            }),
         });
         if (!response.ok) {
             const error = await response.json();
@@ -581,17 +631,7 @@ export class Canon extends Camera {
         if (queryString) {
             url.search = queryString;
         }
-        // save the url to a file
-        // fs.writeFileSync(`/tmp/canon-${Date.now()}.url`, url.toString());
         const response = await fetch(url.toString());
-        // save the response to a file
-        // if (!response.ok) {
-        //     // save the response to a file
-        //     fs.writeFileSync(`/tmp/canon-${Date.now()}.json`, JSON.stringify(response, null, 2));
-        //     // save the status text to a file
-        //     fs.writeFileSync(`/tmp/canon-${Date.now()}.status`, response.statusText);
-        //     throw new Error(`Failed to download image: ${response.statusText}`);
-        // }
         return response.blob();
     }
     async downloadImages(contents) {
@@ -665,7 +705,7 @@ export class Canon extends Camera {
             const response = await fetch(endpoint.path, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
                 },
                 body: JSON.stringify(body),
             });
@@ -711,7 +751,7 @@ export class Canon extends Camera {
             const response = await fetch(endpoint.path, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
                 },
                 body: JSON.stringify(body),
             });
@@ -1137,6 +1177,50 @@ export class Canon extends Camera {
         }
     }
     /**
+     * Execute auto focus control
+     *
+     * Makes a POST request to /shooting/control/af to start or stop auto focus
+     * This API only issues a focusing instruction and does not return focusing results.
+     * Check focus frame information in Live View incidental information for results.
+     *
+     * @param action - The auto focus action to perform ("start" or "stop")
+     * @returns {Promise<object>} Empty object on success
+     * @throws {Error} When:
+     * - Invalid parameter (action must be "start" or "stop")
+     * - Device is busy (during shooting/recording)
+     * - Service in preparation
+     * - AF already started
+     */
+    async executeAutofocus(action) {
+        const endpoint = this.getFeatureUrl('shooting/control/af');
+        if (!endpoint) {
+            throw new Error('Auto focus control feature not found');
+        }
+        const body = {
+            action,
+        };
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(body),
+            });
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || `Failed to control auto focus: ${response.status} ${response.statusText}`);
+            }
+            return response.json();
+        }
+        catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Failed to control auto focus');
+        }
+    }
+    /**
      * Get the shooting mode from the camera's mode dial
      *
      * Makes a GET request to /shooting/settings/shootingmodedial to retrieve the current shooting mode
@@ -1352,7 +1436,6 @@ export class Canon extends Camera {
                             const imageData = buffer.slice(pos, pos + length);
                             const base64Image = Buffer.from(imageData).toString('base64');
                             // save the image to a file
-                            fs.writeFileSync(`/tmp/image-${Date.now()}.jpg`, Buffer.from(base64Image, 'base64'));
                             result.image = base64Image;
                         }
                         else if (type === 0x01) {
@@ -1383,6 +1466,52 @@ export class Canon extends Camera {
         catch (error) {
             throw error;
         }
+    }
+    /**
+     * Gets the Live View image in chunk format from the camera.
+     * When the camera is displaying a menu, a 160x120 black image is sent.
+     * May need to retry if Live View image cannot be acquired immediately after settings change.
+     *
+     * @returns A Promise that resolves to a ReadableStream containing the chunked JPEG data
+     * @throws Error if Live View is not started or device is busy
+     */
+    async startLiveViewImageScroll() {
+        const endpoint = this.getFeatureUrl('shooting/liveview/scroll');
+        if (!endpoint) {
+            throw new Error('Live view scroll feature not supported');
+        }
+        const response = await fetch(endpoint.path, {
+            method: 'GET',
+            headers: { 'Content-Type': 'image/octet-stream' },
+        });
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.message || 'Failed to get live view image scroll');
+        }
+        if (!response.body) {
+            throw new Error('No response body received');
+        }
+        return response.body;
+    }
+    /**
+     * Stops transmission of the Live View image in chunk format.
+     *
+     * @returns Promise that resolves to an empty object on success
+     * @throws Error if Live View is not started or device is busy
+     */
+    async stopLiveViewScroll() {
+        const endpoint = this.getFeatureUrl('shooting/liveview/scroll');
+        if (!endpoint) {
+            throw new Error('Live view scroll feature not supported');
+        }
+        const response = await fetch(endpoint.path, {
+            method: 'DELETE',
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Failed to stop live view scroll');
+        }
+        return response.json();
     }
     getFeatureUrl(feature) {
         for (const version in this.features) {

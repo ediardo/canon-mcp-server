@@ -6,3 +6,5 @@ xfer
 
 node_modules/
 dist/
+
+*.avi
