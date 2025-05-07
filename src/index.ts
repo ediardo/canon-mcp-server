@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import fs from 'fs';
-import { Canon, CanonShootingMode, CanonShutterMode, CanonWhiteBalanceMode } from './Canon.js';
+import { Canon, CanonShootingMode, CanonShutterMode, CanonWhiteBalanceMode } from './Canon/Canon.js';
 import path from 'path';
 import sharp from 'sharp';
 
