@@ -353,6 +353,12 @@ export enum CanonWhiteBalanceMode {
     COLOR_TEMP = 'colortemp', // Color temp.
 }
 
+export enum CanonLiveViewImageDetail {
+    INFO = 'info',
+    IMAGE = 'image',
+    BOTH = 'both',
+}
+
 interface CanonConnectOptions {
     startLiveView?: boolean;
 }
@@ -1046,6 +1052,7 @@ export class Canon extends Camera {
         return response.json();
     }
 
+        
     async sync(callback?: (any?: any) => void, frequency: number = 5) {
         this.isSyncActive = true;
 
@@ -1966,7 +1973,7 @@ export class Canon extends Camera {
         await this.setIgnoreShootingModeDial(false);
     }
 
-    async getLiveViewImageFlipDetail(kind: string = 'info'): Promise<CanonLiveViewImageFlipDetail> {
+    async getLiveViewImageFlipDetail(kind: CanonLiveViewImageDetail = CanonLiveViewImageDetail.IMAGE): Promise<CanonLiveViewImageFlipDetail> {
         const endpoint = this.getFeatureUrl('shooting/liveview/flipdetail');
 
         if (!endpoint) {

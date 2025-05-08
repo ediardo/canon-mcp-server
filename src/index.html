@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Canon Live View</title>
+    <style>
+        body {
+            background-color: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        img {
+            border: 4px solid #555;
+            max-width: 90vw;
+            max-height: 90vh;
+            background: black;
+        }
+        #stats {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div id="stats">FPS: <span id="fps">N/A</span><br>Size: <span id="size">0x0</span></div>
+    <img id="liveview" src="/mjpeg" alt="Live view from Canon" />
+    <script>
+        const img = document.getElementById('liveview');
+        const sizeSpan = document.getElementById('size');
+        const fpsSpan = document.getElementById('fps');
+
+        img.onload = () => {
+            // This will be called once the first frame of the MJPEG stream loads metadata
+            sizeSpan.textContent = `${img.naturalWidth}x${img.naturalHeight}`;
+        };
+
+        // Note: Client-side FPS for an MJPEG stream is not straightforward
+        // as the browser handles the image updates internally.
+        // The server controls the frame rate by how quickly it sends new JPEG images.
+
+        // Connect to the FPS SSE endpoint
+        const fpsSource = new EventSource('/fps');
+        fpsSource.onmessage = function(event) {
+            fpsSpan.textContent = parseFloat(event.data).toFixed(2);
+        };
+
+        fpsSource.onerror = function(err) {
+            console.error('EventSource failed:', err);
+            fpsSpan.textContent = 'Error';
+            // Optionally, you might want to close and reopen the connection here
+            // fpsSource.close();
+        };
+    </script>
+</body>
+</html>

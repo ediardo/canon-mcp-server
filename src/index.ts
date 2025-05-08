@@ -1,11 +1,19 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import fs from 'fs';
-import { Canon, CanonShootingMode, CanonShutterMode, CanonWhiteBalanceMode } from './Canon/Canon.js';
-import path from 'path';
 import sharp from 'sharp';
+import { exec } from 'child_process';
 
+import { Canon, CanonLiveViewImageDetail, CanonShootingMode, CanonShutterMode, CanonWhiteBalanceMode } from './Canon/Canon.js';
+
+function run(command: string) {
+    return new Promise((resolve, reject) => {
+        exec(command, (err, stdout, stderr) => {
+            if (err) return reject(stderr);
+            resolve(stdout);
+        });
+    });
+}
 const OUTPUT_DIR = '/Users/ediardo/CanonMCP';
 
 // Create server instance
@@ -23,7 +31,7 @@ const server = new McpServer({
 let canon: Canon;
 
 server.tool(
-    'connect-canon',
+    'connect-camera',
     'Connect to a Canon camera via CCAPI.',
     {
         host: z.string(),
@@ -374,71 +382,71 @@ server.tool('get-datetime-setting', 'Get date and time setting', {}, async () =>
     };
 });
 
-server.tool('get-sdp', 'Get SDP file of RTP', {}, async () => {
-    if (!canon) {
-        return {
-            content: [
-                {
-                    type: 'text',
-                    text: 'Canon camera not connected. Please connect first.',
-                },
-            ],
-        };
-    }
-    const sdp = await canon.getSDP();
-    return {
-        content: [
-            {
-                type: 'text',
-                text: sdp,
-            },
-        ],
-    };
-});
+// server.tool('get-sdp', 'Get SDP file of RTP', {}, async () => {
+//     if (!canon) {
+//         return {
+//             content: [
+//                 {
+//                     type: 'text',
+//                     text: 'Canon camera not connected. Please connect first.',
+//                 },
+//             ],
+//         };
+//     }
+//     const sdp = await canon.getSDP();
+//     return {
+//         content: [
+//             {
+//                 type: 'text',
+//                 text: sdp,
+//             },
+//         ],
+//     };
+// });
 
-server.tool('start-rtp', 'Start RTP', {}, async () => {
-    if (!canon) {
-        return {
-            content: [
-                {
-                    type: 'text',
-                    text: 'Canon camera not connected. Please connect first.',
-                },
-            ],
-        };
-    }
-    const rtp = await canon.startRTP();
-    return {
-        content: [
-            {
-                type: 'text',
-                text: JSON.stringify(rtp),
-            },
-        ],
-    };
-});
+// server.tool('start-rtp', 'Start RTP', {}, async () => {
+//     if (!canon) {
+//         return {
+//             content: [
+//                 {
+//                     type: 'text',
+//                     text: 'Canon camera not connected. Please connect first.',
+//                 },
+//             ],
+//         };
+//     }
+//     const rtp = await canon.startRTP();
+//     return {
+//         content: [
+//             {
+//                 type: 'text',
+//                 text: JSON.stringify(rtp),
+//             },
+//         ],
+//     };
+// });
 
-server.tool('stop-rtp', 'Stop RTP', {}, async () => {
-    if (!canon) {
-        return {
-            content: [
-                {
-                    type: 'text',
-                    text: 'Canon camera not connected. Please connect first.',
-                },
-            ],
-        };
-    }
-    const rtp = await canon.stopRTP();
-    return {
-        content: [
-            {
-                type: 'text',
-                text: JSON.stringify(rtp, null, 2),
-            },
-        ],
-    };
-});
+// server.tool('stop-rtp', 'Stop RTP', {}, async () => {
+//     if (!canon) {
+//         return {
+//             content: [
+//                 {
+//                     type: 'text',
+//                     text: 'Canon camera not connected. Please connect first.',
+//                 },
+//             ],
+//         };
+//     }
+//     const rtp = await canon.stopRTP();
+//     return {
+//         content: [
+//             {
+//                 type: 'text',
+//                 text: JSON.stringify(rtp, null, 2),
+//             },
+//         ],
+//     };
+// });
 
 server.tool('get-lens-information', 'Get lens information', {}, async () => {
     // if (!canon) {
@@ -494,7 +502,7 @@ server.tool(
         const resizedImage = await sharp(buffer)
             .resize(1024, 1024, {
                 fit: 'inside',
-                withoutEnlargement: true
+                withoutEnlargement: true,
             })
             .toBuffer();
         const resizedBase64 = resizedImage.toString('base64');
@@ -516,45 +524,48 @@ server.tool(
     }
 );
 
-server.tool('get-live-view-image', 'Get live view image of the camera. This does not take a photo.', {}, async () => {
-    if (!canon) {
+server.tool(
+    'get-live-view-image',
+    'Get live view image of the camera. This does not take a photo.',
+    {
+        //incidentalInfo: z.boolean().optional().default(false).describe('Whether to include incidental information, such as focus frame information and histogram'),
+    },
+    async () => {
+        if (!canon) {
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: 'Canon camera not connected. Please connect first.',
+                    },
+                ],
+            };
+        }
+
+        const liveViewImage = await canon.getLiveViewImageFlipDetail(CanonLiveViewImageDetail.IMAGE);
+
+        if (!liveViewImage.image) {
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: 'No live view image found.',
+                    },
+                ],
+            };
+        }
+
         return {
             content: [
                 {
-                    type: 'text',
-                    text: 'Canon camera not connected. Please connect first.',
+                    type: 'image',
+                    data: liveViewImage.image,
+                    mimeType: 'image/jpeg',
                 },
             ],
         };
     }
-
-    const liveViewImage = await canon.getLiveViewImageFlipDetail('both');
-
-    if (!liveViewImage.image) {
-        return {
-            content: [
-                {
-                    type: 'text',
-                    text: 'No live view image found.',
-                },
-            ],
-        };
-    }
-
-    return {
-        content: [
-            {
-                type: 'image',
-                data: liveViewImage.image,
-                mimeType: 'image/jpeg',
-            },
-            {
-                type: 'text',
-                text: JSON.stringify(liveViewImage.info),
-            },
-        ],
-    };
-});
+);
 
 server.tool(
     'start-interval-photos',
@@ -620,17 +631,23 @@ server.tool('get-owner-name', 'Get the owner name set in the camera', {}, async 
     };
 });
 
-server.tool('set-owner-name', 'Set the owner name in the camera', {
-    name: z.string()
-        .regex(/^[\x00-\x7F]*$/, 'Owner name must contain only ASCII characters')
-        .max(31, 'Owner name cannot exceed 31 characters')
-        .describe('The name to set as the owner name'),
-}, async ({ name }) => {
-    await canon.setOwnerName(name);
-    return {
-        content: [{ type: 'text', text: `Owner name set to ${name}` }],
-    };
-});
+server.tool(
+    'set-owner-name',
+    'Set the owner name in the camera',
+    {
+        name: z
+            .string()
+            .regex(/^[\x00-\x7F]*$/, 'Owner name must contain only ASCII characters')
+            .max(31, 'Owner name cannot exceed 31 characters')
+            .describe('The name to set as the owner name'),
+    },
+    async ({ name }) => {
+        await canon.setOwnerName(name);
+        return {
+            content: [{ type: 'text', text: `Owner name set to ${name}` }],
+        };
+    }
+);
 
 server.tool('get-shutter-mode', 'Get the shutter mode release of the camera', {}, async () => {
     const shutterMode = await canon.getShutterMode();
@@ -639,14 +656,19 @@ server.tool('get-shutter-mode', 'Get the shutter mode release of the camera', {}
     };
 });
 
-server.tool('set-shutter-mode', 'Set the shutter mode release of the camera', {
-    mode: z.nativeEnum(CanonShutterMode).describe('The mode to set the shutter mode to'),
-}, async ({ mode }) => {
-    await canon.setShutterMode(mode);
-    return {
-        content: [{ type: 'text', text: `Shutter mode set to ${mode}` }],
-    };
-});
+server.tool(
+    'set-shutter-mode',
+    'Set the shutter mode release of the camera',
+    {
+        mode: z.nativeEnum(CanonShutterMode).describe('The mode to set the shutter mode to'),
+    },
+    async ({ mode }) => {
+        await canon.setShutterMode(mode);
+        return {
+            content: [{ type: 'text', text: `Shutter mode set to ${mode}` }],
+        };
+    }
+);
 
 server.tool('get-color-temperature', 'Get the color temperature of the camera', {}, async () => {
     const colorTemperature = await canon.getColorTemperatureSetting();
@@ -655,43 +677,83 @@ server.tool('get-color-temperature', 'Get the color temperature of the camera', 
     };
 });
 
-server.tool('set-color-temperature', 'Set the color temperature of the camera', {
-    value: z.number().describe('The value to set the color temperature to'),
-}, async ({ value }) => {
-    const colorTemperature = await canon.setColorTemperatureSetting(value);
+server.tool(
+    'set-color-temperature',
+    'Set the color temperature of the camera',
+    {
+        value: z.number().describe('The value to set the color temperature to'),
+    },
+    async ({ value }) => {
+        const colorTemperature = await canon.setColorTemperatureSetting(value);
 
-    return {
-        content: [{ type: 'text', text: JSON.stringify(colorTemperature) }],
-    };
+        return {
+            content: [{ type: 'text', text: JSON.stringify(colorTemperature) }],
+        };
+    }
+);
+
+server.tool(
+    'set-white-balance',
+    'Set the white balance of the camera',
+    {
+        value: z.nativeEnum(CanonWhiteBalanceMode).describe('The value to set the white balance to'),
+    },
+    async ({ value }) => {
+        const whiteBalance = await canon.setWhiteBalanceSetting(value);
+        return {
+            content: [{ type: 'text', text: JSON.stringify(whiteBalance) }],
+        };
+    }
+);
+
+server.tool(
+    'execute-autofocus',
+    'Execute autofocus. This API only issues a focusing instruction and does not return the focusing results. For the focusing results, check the focus frame information in the Live View incidental information.',
+    {
+        action: z.enum(['start', 'stop']).describe('The action to execute'),
+    },
+    async ({ action }) => {
+        const autofocus = await canon.executeAutofocus(action);
+        return { content: [{ type: 'text', text: JSON.stringify(autofocus) }] };
+    }
+);
+
+server.tool('start-camera-livestream', 'Start livestream in a browser',  {
+    host: z.string(),
+    port: z.number().optional().default(8080),
+    https: z.boolean().optional().default(false),
+    username: z.string().optional(),
+    password: z.string().optional(),
+},
+async ({ host, port, https, username, password }) => {
+    const checkOutput = await run(`docker ps -a --filter "name=^/canon-stream$" --format "{{.Status}}"`);
+    const status = (checkOutput as string).trim();
+
+    let output;
+    if (status.startsWith("Up")) {
+        output = "Container is already running. Open the browser and navigate to http://localhost:8080";
+    } else if (status.startsWith("Exited")) {
+        await run(`docker start canon-stream`);
+        output = "Container is already running. Open the browser and navigate to http://localhost:8080";
+    } else {
+        await run(`docker run -d --name canon-stream \
+            -e CANON_IP=${host} -e CANON_PORT=${port} ${https ? '-e CANON_HTTPS=true' : ''} \
+            -p ${port}:${port} canon-stream`);
+        output = "Container is already running. Open the browser and navigate to http://localhost:8080";
+    }
+
+    return { content: [{ type: 'text', text: output as string }] };
 });
 
-server.tool('get-white-balance', 'Get the white balance of the camera', {}, async () => {
-    const whiteBalance = await canon.getWhiteBalanceSetting();
-    return {
-        content: [{ type: 'text', text: JSON.stringify(whiteBalance) }],
-    };
-});
-
-server.tool('set-white-balance', 'Set the white balance of the camera', {
-    value: z.nativeEnum(CanonWhiteBalanceMode).describe('The value to set the white balance to'),
-}, async ({ value }) => {
-    const whiteBalance = await canon.setWhiteBalanceSetting(value);
-    return {
-        content: [{ type: 'text', text: JSON.stringify(whiteBalance) }],
-    };
-});
-
-server.tool('execute-autofocus', 'Execute autofocus. This API only issues a focusing instruction and does not return the focusing results. For the focusing results, check the focus frame information in the Live View incidental information.', {
-    action: z.enum(['start', 'stop']).describe('The action to execute'),
-}, async ({ action }) => {
-    const autofocus = await canon.executeAutofocus(action);
-    return { content: [{ type: 'text', text: JSON.stringify(autofocus) }] };
+server.tool('stop-camera-livestream', 'Stop livestream in a browser', {}, async () => {
+    await canon.stopLiveViewScroll();
+    return { content: [{ type: 'text', text: 'Livestream stopped' }] };
 });
 
 async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.log('Server started');
+    // console.log('Server started');
 }
 
 main().catch((err) => {
