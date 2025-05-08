@@ -5,6 +5,7 @@ import sharp from 'sharp';
 import { exec } from 'child_process';
 
 import { Canon, CanonLiveViewImageDetail, CanonShootingMode, CanonShutterMode, CanonWhiteBalanceMode } from './Canon/Canon.js';
+import { startDockerStream, stopDockerStream } from './docker.js';
 
 function run(command: string) {
     return new Promise((resolve, reject) => {
@@ -15,6 +16,7 @@ function run(command: string) {
     });
 }
 const OUTPUT_DIR = '/Users/ediardo/CanonMCP';
+const HTTPS = false;
 
 // Create server instance
 const server = new McpServer({
@@ -57,11 +59,8 @@ server.tool(
 server.tool(
     'take-photo',
     'Take a photo with the camera using the current shooting settings.',
-    {
-        delay: z.number().optional().default(0).describe('Delay in seconds between photos'),
-        repeat: z.number().optional().default(1).describe('Number of photos to take'),
-    },
-    async ({ delay, repeat }) => {
+    {},
+    async () => {
         if (!canon) {
             return {
                 content: [
@@ -75,7 +74,7 @@ server.tool(
         }
         // await canon.getEventPolling();
         const picture = await canon.takePhoto();
-        const base64 = picture[0];
+        //const base64 = picture[0];
         return {
             content: [
                 {
@@ -721,32 +720,18 @@ server.tool(
 server.tool('start-camera-livestream', 'Start livestream in a browser',  {
     host: z.string(),
     port: z.number().optional().default(8080),
-    https: z.boolean().optional().default(false),
+    https: z.boolean().optional().default(HTTPS),
     username: z.string().optional(),
     password: z.string().optional(),
 },
 async ({ host, port, https, username, password }) => {
-    const checkOutput = await run(`docker ps -a --filter "name=^/canon-stream$" --format "{{.Status}}"`);
-    const status = (checkOutput as string).trim();
-
-    let output;
-    if (status.startsWith("Up")) {
-        output = "Container is already running. Open the browser and navigate to http://localhost:8080";
-    } else if (status.startsWith("Exited")) {
-        await run(`docker start canon-stream`);
-        output = "Container is already running. Open the browser and navigate to http://localhost:8080";
-    } else {
-        await run(`docker run -d --name canon-stream \
-            -e CANON_IP=${host} -e CANON_PORT=${port} ${https ? '-e CANON_HTTPS=true' : ''} \
-            -p ${port}:${port} canon-stream`);
-        output = "Container is already running. Open the browser and navigate to http://localhost:8080";
-    }
+    const output = await startDockerStream(host, port, https, username, password);
 
     return { content: [{ type: 'text', text: output as string }] };
 });
 
 server.tool('stop-camera-livestream', 'Stop livestream in a browser', {}, async () => {
-    await canon.stopLiveViewScroll();
+    await stopDockerStream();
     return { content: [{ type: 'text', text: 'Livestream stopped' }] };
 });
 
