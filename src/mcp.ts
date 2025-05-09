@@ -1,21 +1,16 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { z } from 'zod';
 import sharp from 'sharp';
+import path from 'path';
+import os from 'os';
+import fs from 'fs';
+import { z } from 'zod';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { exec } from 'child_process';
 
 import { Canon, CanonLiveViewImageDetail, CanonShootingMode, CanonShutterMode, CanonWhiteBalanceMode } from './Canon/Canon.js';
 import { startDockerStream, stopDockerStream } from './docker.js';
 
-function run(command: string) {
-    return new Promise((resolve, reject) => {
-        exec(command, (err, stdout, stderr) => {
-            if (err) return reject(stderr);
-            resolve(stdout);
-        });
-    });
-}
-const OUTPUT_DIR = '/Users/ediardo/CanonMCP';
+
 const HTTPS = false;
 
 // Create server instance
@@ -31,6 +26,12 @@ const server = new McpServer({
 
 // Keep Canon instance accessible to other methods
 let canon: Canon;
+
+const OUTPUT_DIR = path.join(os.homedir(), 'CanonMCP');
+async function saveImageToFile(image: string, filePath: string) {
+    const buffer = Buffer.from(image, 'base64');
+    fs.writeFileSync(filePath, buffer);
+}
 
 server.tool(
     'connect-camera',
@@ -483,7 +484,7 @@ server.tool(
     'get-last-photo',
     'Get last photo from the camera. The photo is saved to the output directory.',
     {
-        outputDir: z.string().describe('The output directory to save the photo to.'),
+        outputDir: z.string().default(OUTPUT_DIR).describe('The output directory to save the photo to.'),
     },
     async ({ outputDir }) => {
         if (!canon) {
@@ -496,19 +497,33 @@ server.tool(
                 ],
             };
         }
+        if (!outputDir) {
+            return {
+                content: [
+                    { type: 'text', text: 'Output directory not provided' }
+                ]
+            };
+        }
+
+        if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir, { recursive: true });
+        }
+
         const lastPhoto = await canon.getLastPhoto();
         const buffer = Buffer.from(lastPhoto, 'base64');
         const resizedImage = await sharp(buffer)
-            .resize(1024, 1024, {
+            .resize(720, 720, {
                 fit: 'inside',
                 withoutEnlargement: true,
             })
+            .jpeg({ quality: 80 })
             .toBuffer();
         const resizedBase64 = resizedImage.toString('base64');
-        // // save to file
-        // const buffer = Buffer.from(lastPhoto, 'base64');
-        // const filePath = path.join(OUTPUT_DIR, `${Date.now()}.JPG`);
-        // fs.writeFileSync(filePath, buffer);
+
+        const targetPath = path.join(outputDir, `${Date.now()}.JPG`);
+        await saveImageToFile(lastPhoto, targetPath);
+
+        
         return {
             content: [
                 {
@@ -517,6 +532,10 @@ server.tool(
                     mimeType: 'image/jpeg',
                     // type: "text",
                     // text: JSON.stringify(lastPhoto, null, 2),
+                },
+                {
+                    type: 'text',
+                    text: `Image saved to ${targetPath}`,
                 },
             ],
         };

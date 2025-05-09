@@ -1,6 +1,10 @@
 {
   "name": "mcp",
   "version": "1.0.0",
+  "author": "Eddie Ramirez <djedir@gmail.com>",
+  "license": "MIT",
+  "description": "Canon Camera Proxy",
+  "homepage": "https://github.com/ediardo/canon",
   "main": "index.js",
   "directories": {
     "lib": "lib",
@@ -15,9 +19,6 @@
     "start-container": "docker run -d --name mcp-canon-stream mcp-canon-stream"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.2",
     "dockerode": "^4.0.6",

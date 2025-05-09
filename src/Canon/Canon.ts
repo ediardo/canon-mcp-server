@@ -367,12 +367,6 @@ interface CanonOwnerName {
     name: string;
 }
 
-interface CanonAutoFocusSetting {
-    value: string;
-    ability: string[];
-}
-
-const DELAY_AFTER_SHUTTER_BUTTON = 500;
 
 export class Canon extends Camera {
     baseUrl: string;
@@ -457,6 +451,7 @@ export class Canon extends Camera {
             throw error;
         }
     }
+
 
     /**
      * Processes a live view stream from the camera by reading chunks of JPEG data.
