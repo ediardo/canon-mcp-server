@@ -127,6 +127,17 @@ set tv 1/4000
 - **stop-camera-livestream**  
   Stop livestream in a browser.
 
+## Requirements
+
+You MUST activate CCAPI on your camera using a firmware developed by Canon.
+
+Here are some resources to learn how to do it:
+
+- https://developercommunity.usa.canon.com/s/article/How-to-Capture-an-Image-with-CCAPI
+- https://developercommunity.usa.canon.com/s/article/Introduction-to-Camera-Control-API-CCAPI
+
+
+
 ## Installation
 
 **Clone the repo**
