@@ -22,12 +22,14 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.2",
     "dockerode": "^4.0.6",
+    "dotenv": "^16.5.0",
     "sharp": "^0.34.1",
     "zod": "^3.24.3"
   },
   "devDependencies": {
     "@types/dockerode": "^3.3.38",
-    "@types/node": "^22.15.3",
+    "@types/node": "^22.15.17",
+    "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   },
   "type": "module",

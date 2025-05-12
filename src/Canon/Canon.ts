@@ -540,7 +540,7 @@ export class Canon extends Camera {
         this.intervalRepeat = repeat;
 
         while (this.intervalMode && this.intervalRepeat > 0) {
-            await this.takePhoto();
+            await this.shutterbutton();
             await new Promise((resolve) => setTimeout(resolve, this.intervalInterval));
             this.intervalRepeat--;
         }

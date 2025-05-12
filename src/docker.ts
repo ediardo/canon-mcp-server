@@ -18,7 +18,7 @@ export async function startDockerStream(host: string, port: number, https: boole
         // Container does not exist, create it
         await docker
             .createContainer({
-                Image: 'mcp-canon-stream',
+                Image: 'mcp-canon-stream:latest',
                 name: 'mcp-canon-stream',
                 Env: [
                     `CANON_IP=${host}`,

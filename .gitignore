@@ -8,5 +8,15 @@ node_modules/
 dist/
 
 *.avi
+*.mp4
+*.mp3
+*.wav
+*.m4a
+*.m4b
+*.m4p
+*.m4v
+*.mov
+*.mpg
+*.mpeg
 
 build/

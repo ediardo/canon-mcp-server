@@ -10,6 +10,6 @@
       "skipLibCheck": true,
       "forceConsistentCasingInFileNames": true
     },
-    "include": ["src/**/*", "liveview.ts"],
+    "include": ["src/**/*", "liveview.ts", "examples/**/*"],
     "exclude": ["node_modules"]
   }
