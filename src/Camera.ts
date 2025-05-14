@@ -34,6 +34,11 @@ export abstract class Camera {
     abstract connect(): Promise<any>;
 
     /**
+     * Disconnect from the camera.
+     */
+    abstract disconnect(): Promise<any>;
+
+    /**
      * Take a photo.
      * 
      * @returns {Promise<string[]>} The path to the photo.

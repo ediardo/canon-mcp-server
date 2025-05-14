@@ -452,6 +452,17 @@ export class Canon extends Camera {
         }
     }
 
+    /**
+     * Disconnect from the camera.
+     * 
+     * This will stop the live view stream, stop the event polling, stop the event monitoring, and stop the interval photos. CCAPI does not support disconnecting from the camera per se, so this is a best effort.
+     */
+    async disconnect(): Promise<any> {
+        this.stopLiveViewScroll();
+        this.stopEventPolling();
+        this.stopEventMonitoring();
+        this.stopIntervalPhotos();
+    }
 
     /**
      * Processes a live view stream from the camera by reading chunks of JPEG data.
