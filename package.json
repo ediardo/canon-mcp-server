@@ -1,11 +1,11 @@
 {
-  "name": "mcp",
+  "name": "canon-client",
   "version": "1.0.0",
   "author": "Eddie Ramirez <djedir@gmail.com>",
   "license": "MIT",
   "description": "Canon Camera Proxy",
   "homepage": "https://github.com/ediardo/canon",
-  "main": "index.js",
+  "main": "build/index.js",
   "directories": {
     "lib": "lib",
     "src": "src"

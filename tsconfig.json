@@ -1,15 +1,17 @@
 {
     "compilerOptions": {
-      "target": "ES2022", 
-      "module": "NodeNext",
-      "moduleResolution": "NodeNext",
-      "outDir": "./build",
-      "rootDir": "./src",
-      "strict": true,
-      "esModuleInterop": true,
-      "skipLibCheck": true,
-      "forceConsistentCasingInFileNames": true
+        "target": "ES2022",
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "outDir": "./build",
+        "declaration": true,
+        "declarationDir": "./build",
+        "rootDir": "./src",
+        "strict": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true
     },
     "include": ["src/**/*", "liveview.ts", "examples/**/*"],
     "exclude": ["node_modules"]
-  }
+}
