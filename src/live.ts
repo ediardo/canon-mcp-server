@@ -37,7 +37,7 @@ async function main() {
     async function cleanup() {
         console.log('Shutting down...');
         // Stop live view scroll
-        await canon.stopLiveViewScroll();
+        await canon.stopLiveViewImageScroll();
         // Close all client connections
         for (let res of mjpegClients) {
             try {

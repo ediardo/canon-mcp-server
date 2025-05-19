@@ -1,4 +1,5 @@
 import { Camera } from '../Camera.js';
+import { CameraBusyError, LiveViewNotStartedError, LiveViewAlreadyStartedError, CameraError } from '../Error.js';
 
 // Interface for an API endpoint with supported methods
 interface ApiEndpoint {
@@ -292,7 +293,7 @@ interface CanonShootingSettings {
     };
 }
 
-enum CanonContentType {
+export enum CanonContentType {
     ALL = 'all',
     JPEG = 'jpeg',
     CR2 = 'cr2',
@@ -307,7 +308,7 @@ enum CanonFeatures {
     DEVICE_STATUS_BATTERY = 'devicestatus/battery',
 }
 
-enum CanonVersion {
+export enum CanonVersion {
     VER100 = 'ver100',
     VER110 = 'ver110',
     VER120 = 'ver120',
@@ -328,7 +329,7 @@ export enum CanonShootingMode {
     BULB = 'bulb',
 }
 
-enum ShutterButtonAction {
+export enum CanonShutterButtonAction {
     Release = 'release',
     HalfPress = 'half_press',
     FullPress = 'full_press',
@@ -367,6 +368,54 @@ interface CanonOwnerName {
     name: string;
 }
 
+
+export enum CanonLiveViewSize {
+    OFF = 'off',
+    SMALL = 'small',
+    MEDIUM = 'medium',
+}
+
+export enum CanonContentKind {
+    MAIN = 'main',
+    THUMBNAIL = 'thumbnail',
+    DISPLAY = 'display',
+    EMBEDDED = 'embedded',
+    INFO = 'info',
+}
+
+export interface CanonContentInfo {
+    filesize: number;
+    protect: 'enable' | 'disable';
+    archive: 'enable' | 'disable';
+    rotate: '0' | '90' | '180' | '270';
+    rating: 'off' | '1' | '2' | '3' | '4' | '5';
+    lastmodifieddate: string;
+    playtime: number | null;
+    hdr: 'on' | 'off';
+}
+
+export enum CanonJpegQuality {
+    NONE = 'none',
+    LARGE_FINE = 'large_fine',
+    LARGE_NORMAL = 'large_normal',
+    MEDIUM_FINE = 'medium_fine',
+    MEDIUM_NORMAL = 'medium_normal',
+    LARGE = 'large',
+    MEDIUM = 'medium',
+    MEDIUM1 = 'medium1',
+    MEDIUM2 = 'medium2',
+    SMALL = 'small',
+    SMALL1 = 'small1',
+    SMALL1_FINE = 'small1_fine',
+    SMALL1_NORMAL = 'small1_normal',
+    SMALL2 = 'small2'
+}
+
+export enum CanonRawQuality {
+    NONE = 'none',
+    RAW = 'raw',
+    CRAW = 'craw'
+}
 
 export class Canon extends Camera {
     baseUrl: string;
@@ -434,7 +483,7 @@ export class Canon extends Camera {
             this.lensInformation = await this.getLensInformation();
 
             if (startLiveView) {
-                await this.startLiveView();
+                await this.startLiveView(CanonLiveViewSize.SMALL, 'keep');
             }
             
             return {
@@ -458,7 +507,7 @@ export class Canon extends Camera {
      * This will stop the live view stream, stop the event polling, stop the event monitoring, and stop the interval photos. CCAPI does not support disconnecting from the camera per se, so this is a best effort.
      */
     async disconnect(): Promise<any> {
-        this.stopLiveViewScroll();
+        this.stopLiveViewImageScroll();
         this.stopEventPolling();
         this.stopEventMonitoring();
         this.stopIntervalPhotos();
@@ -522,6 +571,56 @@ export class Canon extends Camera {
         }
     }
 
+    public static async processEventMonitoringStream(
+        stream: ReadableStream<Uint8Array>,
+        onEvent: (event: any) => void
+    ): Promise<void> {
+        const reader = stream.getReader();
+        let buffer = new Uint8Array();
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            if (!value) continue;
+
+            // Append new data to existing buffer
+            const newBuffer = new Uint8Array(buffer.length + value.length);
+            newBuffer.set(buffer);
+            newBuffer.set(value, buffer.length);
+            buffer = newBuffer;
+
+            // Process complete events
+            while (buffer.length >= 6) { // Minimum event size (2 marker + 1 type + 4 length)
+                // Look for start marker 0xFF 0x00
+                if (buffer[0] !== 0xFF || buffer[1] !== 0x00) {
+                    buffer = buffer.slice(1);
+                    continue;
+                }
+
+                // Get event type and length
+                const type = buffer[2];
+                const length = (buffer[3] << 24) | (buffer[4] << 16) | (buffer[5] << 8) | buffer[6];
+
+                // Check if we have complete event
+                if (buffer.length < length + 7) break;
+
+                // Extract event data
+                const eventData = buffer.slice(7, length + 7);
+                const decoder = new TextDecoder();
+                try {
+                    const jsonStr = decoder.decode(eventData);
+                    const event = JSON.parse(jsonStr);
+                    onEvent(event);
+                } catch (e) {
+                    console.error('Failed to parse event data:', e);
+                }
+
+                // Remove processed event from buffer
+                buffer = buffer.slice(length + 7);
+            }
+        }
+    }
+    
     private static getSDPIpAddress(sdp: string): string | null {
         const lines = sdp.split('\n');
         for (const line of lines) {
@@ -536,7 +635,7 @@ export class Canon extends Camera {
 
     async takePhoto(): Promise<any> {
         try {
-            await this.startEventPolling();
+            //await this.startEventPolling();
             const response = await this.shutterbutton();
 
             return response;
@@ -841,10 +940,22 @@ export class Canon extends Camera {
     }
 
     /**
-     * Start the event monitoring in chunk format
-     *
-     *
-     * @returns
+     * Start event monitoring in chunk format
+     * 
+     * Makes a GET request to /event/monitoring to start receiving event data in binary chunks.
+     * Each chunk contains event data in a binary format with markers and length fields.
+     * 
+     * The binary format is:
+     * - Start marker: 0xFF 0x00
+     * - Type byte
+     * - 4 byte length (big-endian)
+     * - Data bytes
+     * 
+     * @returns {Promise<any>} Empty object on success
+     * @throws {Error} When:
+     * - Event monitoring feature not found
+     * - Response body reader not available
+     * - Event monitoring already started (503 status)
      */
     async startEventMonitoring(): Promise<any> {
         const url = this.getFeatureUrl('event/monitoring');
@@ -858,66 +969,17 @@ export class Canon extends Camera {
                 'Content-Type': 'application/octet-stream',
             },
         });
-        const reader = response.body?.getReader();
-        if (!reader) {
-            throw new Error('Response body reader not available');
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.message || 'Failed to get live view image scroll');
         }
 
-        // Process chunks as they arrive
-        while (true) {
-            const { done, value } = await reader.read();
-
-            if (done) {
-                break;
-            }
-
-            // value is a Uint8Array containing the chunk data
-            if (value) {
-                // Parse the binary data
-                let pos = 0;
-                while (pos < value.length) {
-                    // Look for start marker: 0xFF followed by 0x00
-                    if (value[pos] === 0xff && pos + 1 < value.length && value[pos + 1] === 0x00) {
-                        // Found marker, move past it
-                        pos += 2;
-
-                        if (pos >= value.length) break;
-
-                        // Get type
-                        const type = value[pos];
-                        pos++;
-
-                        if (pos + 4 >= value.length) break;
-
-                        // Get data length (4 bytes, big-endian)
-                        const length =
-                            (value[pos] << 24) | (value[pos + 1] << 16) | (value[pos + 2] << 8) | value[pos + 3];
-                        pos += 4;
-
-                        if (pos + length > value.length) break;
-
-                        // Extract the data bytes and convert to string
-                        const dataBytes = value.slice(pos, pos + length);
-                        const dataText = new TextDecoder().decode(dataBytes);
-
-                        if (type === 0x02) {
-                            try {
-                                const jsonData = JSON.parse(dataText);
-                            } catch (e) {
-                                continue;
-                            }
-                        }
-
-                        pos += length;
-                    } else {
-                        // Not a marker, skip to next byte
-                        pos++;
-                    }
-                }
-            }
+        if (!response.body) {
+            throw new Error('No response body received');
         }
 
-        return {};
+        return response.body;
     }
 
     /**
@@ -1074,7 +1136,26 @@ export class Canon extends Camera {
         this.isSyncActive = false;
     }
 
-    async downloadImage(path: string, kind: string) {
+    /**
+     * Downloads an image or other content from the camera.
+     * 
+     * Makes a GET request to /contents/[storage]/[directory]/[file] to download content.
+     * 
+     * @param path - Path to the content file on the camera
+     * @param kind - Optional content kind parameter:
+     *   - main: Main data (Default when kind not specified)
+     *   - thumbnail: Thumbnail image
+     *   - display: Display image 
+     *   - embedded: Embedded image (RAW only)
+     *   - info: File information
+     * @returns Promise resolving to a Blob containing the downloaded content
+     * @throws Error when:
+     *   - Invalid query parameter (400)
+     *   - Content not found (404)
+     *   - Range request invalid (416)
+     *   - Device busy during shooting/recording (503)
+     */
+    async downloadImage(path: string, kind: CanonContentKind = CanonContentKind.MAIN) {
         const url = new URL(path, this.baseUrl);
         const params = new URLSearchParams();
         if (kind) params.append('kind', kind);
@@ -1104,7 +1185,7 @@ export class Canon extends Camera {
 
         if (newFiles.length > 0) {
             for (const file of newFiles) {
-                const blob = await this.downloadImage(file, 'display');
+                const blob = await this.downloadImage(file, CanonContentKind.DISPLAY);
                 blobs.push(blob);
             }
         }
@@ -1114,22 +1195,77 @@ export class Canon extends Camera {
         return blobs;
     }
 
-    async startLiveView(liveViewSize: string = 'medium', cameraDisplay: string = 'keep') {
+    /**
+     * Start Live View on the camera
+     * 
+     * Makes a POST request to /shooting/liveview to start live view streaming
+     * 
+     * @param {CanonLiveViewSize} [liveViewSize=CanonLiveViewSize.MEDIUM] - Live View output size control:
+     *   - 'off': Does not perform Live View output
+     *   - 'small': Performs Live View output at small size
+     *   - 'medium': Performs Live View output at medium size
+     * @param {string} [cameraDisplay='keep'] - Camera LCD display control:
+     *   - 'on': Camera LCD display ON
+     *   - 'off': Camera LCD display OFF  
+     *   - 'keep': Maintain current Camera LCD display
+     * @returns {Promise<object>} Empty object on success
+     * @throws {Error} When:
+     * - Live view feature not found
+     * - Invalid parameter (illegal liveviewsize/cameradisplay value)
+     * - Device busy (during shooting/recording)
+     * - Mode not supported (e.g. cameradisplay=off in Movie mode)
+     */
+    async startLiveView(liveViewSize: CanonLiveViewSize = CanonLiveViewSize.MEDIUM, cameraDisplay: string = 'keep') {
         const endpoint = this.getFeatureUrl('shooting/liveview');
 
         if (!endpoint) {
             throw new Error('Live view feature not found');
         }
 
+        try {
         const response = await fetch(endpoint.path, {
             method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify({
                 liveviewsize: liveViewSize,
                 cameradisplay: cameraDisplay,
             }),
         });
 
-        return response.json();
+        if (!response.ok) {
+            const error = await response.json();
+            if (response.status === 503) {
+                if (error.message === 'Device busy') {
+                    throw new CameraBusyError();
+                } else if (error.message === 'Live view not started') {
+                    throw new LiveViewNotStartedError(); 
+                } else if (error.message === 'Already started') {
+                    throw new LiveViewAlreadyStartedError();
+                }
+            }
+            throw new Error(error.message || 'Failed to start live view');
+            }
+
+            return response.json();
+        } catch (error) {
+            if (error instanceof CameraError) {
+                throw error;
+            }
+            throw new Error('Failed to start live view');
+        }
+    }
+
+    /**
+     * Stop Live View on the camera. This is a wrapper around the startLiveView method.
+     * 
+     * Makes a POST request to /shooting/liveview to stop live view streaming
+     * 
+     * @returns {Promise<object>} Empty object on success
+     */
+    async stopLiveView(): Promise<any> {
+        this.startLiveView(CanonLiveViewSize.OFF);
     }
 
     async getLiveViewImageFlip(): Promise<string> {
@@ -1199,6 +1335,8 @@ export class Canon extends Camera {
         }
     }
 
+    
+
     /**
      * Execute manual shutter button control
      *
@@ -1215,7 +1353,7 @@ export class Canon extends Camera {
      * - AF focusing failed
      * - Cannot write to storage card
      */
-    async shutterbuttonManual(action: ShutterButtonAction, af: boolean = true): Promise<object> {
+    async shutterbuttonManual(action: CanonShutterButtonAction, af: boolean = true): Promise<object> {
         const endpoint = this.getFeatureUrl('shooting/control/shutterbutton/manual');
 
         if (!endpoint) {
@@ -1574,10 +1712,103 @@ export class Canon extends Camera {
 
         const { addedcontents }: { addedcontents: string[] } = events;
         const path = addedcontents.filter((ad) => ad.endsWith('.JPG'))[0];
-        const image = await this.downloadImage(path, 'main');
+        const image = await this.downloadImage(path, CanonContentKind.MAIN);
         const buffer = await image.arrayBuffer();
         const base64 = Buffer.from(buffer).toString('base64');
         return base64;
+    }
+
+    /**
+     * Get the aperture value level increment information
+     * 
+     * Makes a GET request to /customfunction/exposureincrements/av to retrieve the current 
+     * aperture value increment setting
+     *
+     * @returns {Promise<{value: string}>} Object containing the aperture increment value
+     * Example response:
+     * {
+     *   "value": "1/3"  
+     * }
+     * @throws {Error} When:
+     * - Feature not found
+     * - Request fails
+     */
+    async getApertureIncrements(): Promise<{value: string}> {
+        const endpoint = this.getFeatureUrl('customfunction/exposureincrements/av');
+
+        if (!endpoint) {
+            throw new Error('Aperture increments feature not found');
+        }
+
+        const response = await fetch(endpoint.path);
+
+        if (!response.ok) {
+            throw new Error(`Failed to get aperture increments: ${response.status} ${response.statusText}`);
+        }
+
+        return response.json();
+    }
+
+    /**
+     * Get the shutter speed level increment information
+     * 
+     * Makes a GET request to /customfunction/exposureincrements/tv to retrieve the current 
+     * shutter speed increment setting
+     *
+     * @returns {Promise<{value: string}>} Object containing the shutter speed increment value
+     * Example response:
+     * {
+     *   "value": "1/3"  
+     * }
+     * @throws {Error} When:
+     * - Feature not found
+     * - Request fails
+     */
+    async getShutterSpeedIncrements(): Promise<{value: string}> {
+        const endpoint = this.getFeatureUrl('customfunction/exposureincrements/tv');
+
+        if (!endpoint) {
+            throw new Error('Shutter speed increments feature not found');
+        }
+
+        const response = await fetch(endpoint.path);
+
+        if (!response.ok) {
+            throw new Error(`Failed to get shutter speed increments: ${response.status} ${response.statusText}`);
+        }
+
+        return response.json();
+    }
+
+    /**
+     * Get the ISO speed level increment information
+     * 
+     * Makes a GET request to /customfunction/isoincrements to retrieve the current 
+     * ISO speed increment setting
+     *
+     * @returns {Promise<{value: string}>} Object containing the ISO speed increment value
+     * Example response:
+     * {
+     *   "value": "1/3"  
+     * }
+     * @throws {Error} When:
+     * - Feature not found 
+     * - Request fails
+     */
+    async getIsoSpeedIncrements(): Promise<{value: string}> {
+        const endpoint = this.getFeatureUrl('customfunction/isoincrements');
+
+        if (!endpoint) {
+            throw new Error('ISO speed increments feature not found');
+        }
+
+        const response = await fetch(endpoint.path);
+
+        if (!response.ok) {
+            throw new Error(`Failed to get ISO speed increments: ${response.status} ${response.statusText}`);
+        }
+
+        return response.json();
     }
 
     /**
@@ -2112,7 +2343,7 @@ export class Canon extends Camera {
      * @returns Promise that resolves to an empty object on success
      * @throws Error if Live View is not started or device is busy
      */
-    async stopLiveViewScroll(): Promise<object> {
+    async stopLiveViewImageScroll(): Promise<object> {
         const endpoint = this.getFeatureUrl('shooting/liveview/scroll');
         if (!endpoint) {
             throw new Error('Live view scroll feature not supported');
@@ -2128,6 +2359,110 @@ export class Canon extends Camera {
         }
 
         return response.json();
+    }
+
+
+    /**
+     * Get the still image shooting quality settings
+     * 
+     * Makes a GET request to /shooting/settings/stillimagequality to retrieve the current 
+     * image quality settings and available options
+     *
+     * @returns {Promise<{
+     *   value: {
+     *     raw: "none" | "raw" | "craw",
+     *     jpeg: "none" | "large_fine" | "large_normal" | "medium_fine" | "medium_normal" | "small" 
+     *   },
+     *   ability: {
+     *     raw: string[],
+     *     jpeg: string[]
+     *   }
+     * }>} Object containing:
+     * - value: Current RAW and JPEG quality settings
+     * - ability: Arrays of available RAW and JPEG quality options
+     * 
+     * @throws {Error} When:
+     * - Feature not found
+     * - Device is busy
+     * - Mode not supported (e.g. during movie recording)
+     */
+    async getStillImageQuality(): Promise<any> {
+        const endpoint = this.getFeatureUrl('shooting/settings/stillimagequality');
+
+        if (!endpoint) {
+            throw new Error('Still image quality feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path);
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || `Failed to get still image quality: ${response.status} ${response.statusText}`);
+            }
+
+            return response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Failed to get still image quality settings');
+        }
+    }
+
+    /**
+     * Set the still image shooting quality settings
+     * 
+     * Makes a PUT request to /shooting/settings/stillimagequality to update the 
+     * image quality settings
+     *
+     * @param {Object} quality - The quality settings to apply
+     * @param {CanonRawQuality} quality.raw - RAW quality setting ('none', 'raw', or 'craw')
+     * @param {CanonJpegQuality} quality.jpeg - JPEG quality setting ('none', 'large_fine', etc)
+     * 
+     * @returns {Promise<{
+     *   value: {
+     *     raw: CanonRawQuality,
+     *     jpeg: CanonJpegQuality
+     *   }
+     * }>} Object containing the updated quality settings
+     * 
+     * @throws {Error} When:
+     * - Feature not found
+     * - Invalid parameters provided
+     * - Device is busy
+     * - Mode not supported (e.g. during movie recording)
+     */
+    async setStillImageQuality(quality: { raw: CanonRawQuality, jpeg: CanonJpegQuality }): Promise<any> {
+        const endpoint = this.getFeatureUrl('shooting/settings/stillimagequality');
+
+        if (!endpoint) {
+            throw new Error('Still image quality feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    value: quality
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || `Failed to set still image quality: ${response.status} ${response.statusText}`);
+            }
+
+            return response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Failed to set still image quality settings');
+        }
     }
 
     private getFeatureUrl(feature: string): ApiEndpoint | undefined {

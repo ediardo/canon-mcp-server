@@ -7,7 +7,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { exec } from 'child_process';
 
-import { Canon, CanonLiveViewImageDetail, CanonShootingMode, CanonShutterMode, CanonWhiteBalanceMode } from './Canon/Canon.js';
+import { Canon, CanonJpegQuality, CanonLiveViewImageDetail, CanonRawQuality, CanonShootingMode, CanonShutterMode, CanonWhiteBalanceMode } from './Canon/Canon.js';
 import { startDockerStream, stopDockerStream } from './docker.js';
 
 
@@ -753,6 +753,71 @@ server.tool('stop-camera-livestream', 'Stop livestream in a browser', {}, async 
     await stopDockerStream();
     return { content: [{ type: 'text', text: 'Livestream stopped' }] };
 });
+
+server.tool('get-aperture-increments', 'Get the aperture increments', {}, async () => {
+    if (!canon) {
+        return {
+            content: [{ type: 'text', text: 'Get the aperture value level increment information.' }],
+            isError: true
+        };
+    }
+
+    const apertureIncrements = await canon.getApertureIncrements();
+    return {
+        content: [{ type: 'text', text: JSON.stringify(apertureIncrements) }]
+    };
+});
+
+server.tool('get-shutter-speed-increments', 'Get the shutter speed increments', {}, async () => {
+    if (!canon) {
+        return {
+            content: [{ type: 'text', text: 'Get the shutter speed value level increment information.' }],
+            isError: true
+        };
+    }
+
+    const shutterSpeedIncrements = await canon.getShutterSpeedIncrements();
+    return {
+        content: [{ type: 'text', text: JSON.stringify(shutterSpeedIncrements) }]
+    };
+});
+
+server.tool('get-iso-speed-increments', 'Get the ISO speed increments', {}, async () => {
+    if (!canon) {
+        return {
+            content: [{ type: 'text', text: 'Get the ISO speed value level increment information.' }],
+            isError: true
+        };
+    }
+
+    const isoSpeedIncrements = await canon.getIsoSpeedIncrements();
+    return {
+        content: [{ type: 'text', text: JSON.stringify(isoSpeedIncrements) }]
+    };
+});
+
+server.tool('get-jpeg-quality', 'Get the JPEG quality', {}, async () => {
+    if (!canon) {
+        return {
+            content: [{ type: 'text', text: 'Get the JPEG quality value level information.' }],
+            isError: true
+        };
+    }
+
+    const jpegQuality = await canon.getStillImageQuality();
+    return {
+        content: [{ type: 'text', text: JSON.stringify(jpegQuality) }]
+    };
+});
+
+server.tool('set-jpeg-quality', 'Set the JPEG quality', {
+    jpeg: z.nativeEnum(CanonJpegQuality).describe('The value to set the JPEG quality to'),
+    raw: z.nativeEnum(CanonRawQuality).describe('The value to set the raw quality to'),
+}, async ({ jpeg, raw }) => {
+    const jpegQuality = await canon.setStillImageQuality({ jpeg, raw });
+    return { content: [{ type: 'text', text: JSON.stringify(jpegQuality) }] };
+});
+
 
 async function main() {
     const transport = new StdioServerTransport();
