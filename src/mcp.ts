@@ -7,7 +7,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { exec } from 'child_process';
 
-import { Canon, CanonJpegQuality, CanonLiveViewImageDetail, CanonRawQuality, CanonShootingMode, CanonShutterMode, CanonWhiteBalanceMode } from './Canon/Canon.js';
+import { Canon, CanonContentKind, CanonHDRMode, CanonJpegQuality, CanonLiveViewImageDetail, CanonRawQuality, CanonShootingMode, CanonShutterMode, CanonWhiteBalanceMode } from './Canon/Canon.js';
 import { startDockerStream, stopDockerStream } from './docker.js';
 
 
@@ -817,6 +817,27 @@ server.tool('set-jpeg-quality', 'Set the JPEG quality', {
     const jpegQuality = await canon.setStillImageQuality({ jpeg, raw });
     return { content: [{ type: 'text', text: JSON.stringify(jpegQuality) }] };
 });
+
+server.tool('get-content', 'Get content from the camera', {
+    path: z.string().describe('The path to the content to get'),
+    kind: z.nativeEnum(CanonContentKind).optional().describe('The kind of content to get'),
+}, async ({ path, kind }) => {
+    const content = await canon.getContent(path, kind);
+    return { content: [{ type: 'text', text: JSON.stringify(content) }] };
+});
+
+server.tool('get-hdr-settings', 'Get the HDR settings', {}, async () => {
+    const hdrSettings = await canon.getHDRSettings();
+    return { content: [{ type: 'text', text: JSON.stringify(hdrSettings) }] };
+});
+
+server.tool('set-hdr-settings', 'Set the HDR settings', {
+    value: z.nativeEnum(CanonHDRMode).describe('The value to set the HDR mode to'),
+}, async ({ value }) => {
+    const hdrSettings = await canon.setHDRSettings(value);
+    return { content: [{ type: 'text', text: JSON.stringify(hdrSettings) }] };
+});
+
 
 
 async function main() {

@@ -29,6 +29,9 @@
   "devDependencies": {
     "@types/dockerode": "^3.3.38",
     "@types/node": "^22.15.17",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^4.1.7",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   },
