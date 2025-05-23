@@ -431,6 +431,13 @@ export enum CanonRawQuality {
     CRAW = 'craw',
 }
 
+export enum CanonFlashMode {
+    AUTO = 'auto',
+    ON = 'on', 
+    SLOW_SYNCHRO = 'slowsynchro',
+    OFF = 'off',
+}
+
 export interface CanonConnectResult {
     currentDirectory: CanonContent;
     shootingSettings: CanonShootingSettings;
@@ -441,6 +448,17 @@ export interface CanonConnectResult {
     macAddress: string;
     lensInformation: CanonLensInformation;
 }
+
+
+export enum CanonStillImageAspectRatio {
+    THREE_TWO = '3:2',
+    X1_6 = 'x1.6',
+    FOUR_THREE = '4:3',
+    SIXTEEN_NINE = '16:9',
+    ONE_ONE = '1:1'
+}
+
+export type CanonEnableDisable = 'enable' | 'disable';
 
 export class Canon extends Camera {
     baseUrl: string;
@@ -2647,6 +2665,182 @@ export class Canon extends Camera {
         }
     }
 
+    /**
+     * Get the current still image aspect ratio setting and available options
+     * 
+     * @returns {Promise<{
+     *   value: string,
+     *   ability: string[]
+     * }>} Object containing current aspect ratio and available options
+     * 
+     * @throws {Error} When:
+     * - Feature not found
+     * - Device is busy
+     * - Mode not supported (e.g. during movie recording)
+     */
+    async getStillImageAspectRatio(): Promise<{value: string, ability: string[]}> {
+        const endpoint = this.getFeatureUrl('shooting/settings/stillimageaspectratio');
+
+        if (!endpoint) {
+            throw new Error('Still image aspect ratio feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path);
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(
+                    error.message || `Failed to get still image aspect ratio: ${response.status} ${response.statusText}`
+                );
+            }
+
+            return response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Failed to get still image aspect ratio settings');
+        }
+    }
+
+    /**
+     * Set the still image aspect ratio
+     * 
+     * @param {string} value - Aspect ratio value ('3:2', '4:3', '16:9', '1:1', or 'x1.6')
+     * 
+     * @returns {Promise<{
+     *   value: string
+     * }>} Object containing the updated aspect ratio setting
+     * 
+     * @throws {Error} When:
+     * - Feature not found
+     * - Invalid parameters provided
+     * - Device is busy
+     * - Mode not supported (e.g. during movie recording)
+     */
+    async setStillImageAspectRatio(value: string): Promise<{value: string}> {
+        const endpoint = this.getFeatureUrl('shooting/settings/stillimageaspectratio');
+
+        if (!endpoint) {
+            throw new Error('Still image aspect ratio feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    value,
+                }),
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(
+                    error.message || `Failed to set still image aspect ratio: ${response.status} ${response.statusText}`
+                );
+            }
+
+            return response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Failed to set still image aspect ratio');
+        }
+    }
+
+    /**
+     * Get the current flash settings
+     * 
+     * @returns {Promise<{
+     *   value: string,
+     *   ability: string[]
+     * }>} Object containing current flash value and available options
+     * 
+     * @throws {Error} When:
+     * - Feature not found
+     * - Device is busy
+     * - Mode not supported (e.g. during movie recording)
+     */
+    async getFlashSetting(): Promise<{value: string, ability: string[]}> {
+        const endpoint = this.getFeatureUrl('shooting/settings/flash');
+
+        if (!endpoint) {
+            throw new Error('Flash feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path);
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(
+                    error.message || `Failed to get flash settings: ${response.status} ${response.statusText}`
+                );
+            }
+
+            return response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Failed to get flash settings');
+        }
+    }
+
+    /**
+     * Set the flash settings
+     * 
+     * @param {string} value - Flash mode ('auto', 'on', 'slowsynchro', or 'off')
+     * 
+     * @returns {Promise<{
+     *   value: string
+     * }>} Object containing the updated flash setting
+     * 
+     * @throws {Error} When:
+     * - Feature not found
+     * - Invalid parameters provided
+     * - Device is busy
+     * - Mode not supported (e.g. during movie recording)
+     */
+    async setFlashSetting(value: CanonFlashMode): Promise<{value: string}> {
+        const endpoint = this.getFeatureUrl('shooting/settings/flash');
+
+        if (!endpoint) {
+            throw new Error('Flash feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    value,
+                }),
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(
+                    error.message || `Failed to set flash settings: ${response.status} ${response.statusText}`
+                );
+            }
+
+            return response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Failed to set flash settings');
+        }
+    }
+
     private getFeatureUrl(feature: string): ApiEndpoint | undefined {
         for (const version in this.features) {
             const endpoints = this.features[version];
@@ -2661,6 +2855,482 @@ export class Canon extends Camera {
         }
     }
 
+    /**
+     * Get the current focus bracketing settings and available options
+     * 
+     * @returns Object containing current value and available options
+     * @throws Error if:
+     * - Feature not supported
+     * - Device is busy
+     * - During shooting/recording
+     * - Mode not supported (e.g. during movie mode)
+     */
+    async getFocusBracketingStatus(): Promise<{value: CanonEnableDisable, ability: string[]}> {
+        const endpoint = this.getFeatureUrl('shooting/settings/focusbracketing');
+
+        if (!endpoint) {
+            throw new Error('Focus bracketing feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(
+                    error.message || `Failed to get focus bracketing settings: ${response.status} ${response.statusText}`
+                );
+            }
+
+            return response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Failed to get focus bracketing settings');
+        }
+    }
+
+    /**
+     * Set the focus bracketing mode
+     * 
+     * @param value - 'enable' or 'disable'
+     * @returns Object containing the new value
+     * @throws Error if:
+     * - Invalid parameter provided
+     * - Feature not supported
+     * - Device is busy
+     * - During shooting/recording
+     * - Mode not supported (e.g. during movie mode)
+     */
+    async setFocusBracketingStatus(value: CanonEnableDisable): Promise<{value: string}> {
+        const endpoint = this.getFeatureUrl('shooting/settings/focusbracketing');
+
+        if (!endpoint) {
+            throw new Error('Focus bracketing feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    value,
+                }),
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(
+                    error.message || `Failed to set focus bracketing: ${response.status} ${response.statusText}`
+                );
+            }
+
+            return response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Failed to set focus bracketing');
+        }
+    }
+    
+
+    /**
+     * Get the current number of shots in focus bracketing setting.
+     * 
+     * @returns Object containing the current value and ability range
+     * @throws Error if:
+     * - Device is busy
+     * - During shooting/recording
+     * - Mode not supported (e.g. during movie mode)
+     */
+    async getFocusBracketingNumberOfShots(): Promise<{ value: number; ability: { min: number; max: number; step: number } }> {
+        const endpoint = this.getFeatureUrl('shooting/settings/focusbracketing/numberofshots');
+
+        if (!endpoint) {
+            throw new Error('Focus bracketing number of shots feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(
+                    error.message || `Failed to get focus bracketing number of shots: ${response.status} ${response.statusText}`
+                );
+            }
+
+            return response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Failed to get focus bracketing number of shots');
+        }
+    }
+
+    /**
+     * Set the number of shots in focus bracketing setting. Accepts values between 2 and 999.
+     * 
+     * @param value - The number of shots to set
+     * @returns Object containing the new value
+     * @throws Error if:
+     * - Invalid parameter provided
+     * - Feature not supported
+     * - Device is busy
+     * - During shooting/recording
+     * - Mode not supported (e.g. during movie mode)
+     */
+    async setFocusBracketingNumberOfShots(value: number): Promise<{ value: number }> {
+        const endpoint = this.getFeatureUrl('shooting/settings/focusbracketing/numberofshots');
+
+        if (!endpoint) {
+            throw new Error('Focus bracketing number of shots feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    value,
+                }),
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(
+                    error.message || `Failed to set focus bracketing number of shots: ${response.status} ${response.statusText}`
+                );
+            }
+
+            return response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Failed to set focus bracketing number of shots');
+        }
+    }
+
+    /**
+     * Get the current focus bracketing focus increment and its ability range, with a minimum of 1 and a maximum of 10.
+     * 
+     * @returns Object containing the current value and ability range
+     * @throws Error if:
+     * - Device is busy
+     * - During shooting/recording
+     * - Mode not supported (e.g. during movie mode)
+     */
+    async getFocusBracketingFocusIncrement(): Promise<{ value: number, ability: { min: number, max: number, step: number } }> {
+        const endpoint = this.getFeatureUrl('shooting/settings/focusbracketing/focusincrement');
+
+        if (!endpoint) {
+            throw new Error('Focus bracketing focus increment feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(
+                    error.message || `Failed to get focus bracketing focus increment: ${response.status} ${response.statusText}`
+                );
+            }
+
+            return response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Failed to get focus bracketing focus increment');
+        }
+    }
+
+    /**
+     * Set the focus bracketing focus increment. Accepts values between 1 and 10.
+     * 
+     * @param value - The focus increment value to set
+     * @returns Object containing the new value
+     * @throws Error if:
+     * - Invalid parameter provided
+     * - Feature not supported
+     * - Device is busy
+     * - During shooting/recording
+     * - Mode not supported (e.g. during movie mode)
+     */
+    async setFocusBracketingFocusIncrement(value: number): Promise<{ value: number }> {
+        const endpoint = this.getFeatureUrl('shooting/settings/focusbracketing/focusincrement');
+
+        if (!endpoint) {
+            throw new Error('Focus bracketing focus increment feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    value,
+                }),
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(
+                    error.message || `Failed to set focus bracketing focus increment: ${response.status} ${response.statusText}`
+                );
+            }
+
+            return response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Failed to set focus bracketing focus increment');
+        }
+    }
+
+    /**
+     * Get the current focus bracketing exposure smoothing setting and its abilities.
+     * 
+     * @returns Object containing the current value and ability options
+     * @throws Error if:
+     * - Device is busy
+     * - During shooting/recording
+     * - Mode not supported (e.g. during movie mode)
+     */
+    async getFocusBracketingExposureSmoothing(): Promise<{ value: string, ability: string[] }> {
+        const endpoint = this.getFeatureUrl('shooting/settings/focusbracketing/exposuresmoothing');
+
+        if (!endpoint) {
+            throw new Error('Focus bracketing exposure smoothing feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(
+                    error.message || `Failed to get focus bracketing exposure smoothing: ${response.status} ${response.statusText}`
+                );
+            }
+
+            return response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Failed to get focus bracketing exposure smoothing');
+        }
+    }
+
+    /**
+     * Set the focus bracketing exposure smoothing.
+     * 
+     * @param value - The exposure smoothing value to set ('enable' or 'disable')
+     * @returns Object containing the new value
+     * @throws Error if:
+     * - Invalid parameter provided
+     * - Feature not supported
+     * - Device is busy
+     * - During shooting/recording
+     * - Mode not supported (e.g. during movie mode)
+     */
+    async setFocusBracketingExposureSmoothing(value: string): Promise<{ value: string }> {
+        const endpoint = this.getFeatureUrl('shooting/settings/focusbracketing/exposuresmoothing');
+
+        if (!endpoint) {
+            throw new Error('Focus bracketing exposure smoothing feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    value,
+                }),
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(
+                    error.message || `Failed to set focus bracketing exposure smoothing: ${response.status} ${response.statusText}`
+                );
+            }
+
+            return response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Failed to set focus bracketing exposure smoothing');
+        }
+    }
+
+
+    /**
+     * Get the current value and ability values of the Focus bracketing (depth composition).
+     * 
+     * @returns Object containing the current value and ability values
+     * @throws Error if:
+     * - Device is busy
+     * - During shooting/recording
+     * - Mode not supported (e.g. during movie mode)
+     */
+    async getFocusBracketingDepthComposition(): Promise<{ value: string; ability: string[] }> {
+        const endpoint = this.getFeatureUrl('shooting/settings/focusbracketing/depthcomposite');
+
+        if (!endpoint) {
+            throw new Error('Focus bracketing depth composition feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(
+                    error.message || `Failed to get focus bracketing depth composition: ${response.status} ${response.statusText}`
+                );
+            }
+
+            return response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Failed to get focus bracketing depth composition');
+        }
+    }
+
+    /**
+     * Set the Focus bracketing (depth composition).
+     * 
+     * @param value - The depth composition value to set ('enable' or 'disable')
+     * @returns Object containing the new value
+     * @throws Error if:
+     * - Invalid parameter provided
+     * - Feature not supported
+     * - Device is busy
+     * - During shooting/recording
+     * - Mode not supported (e.g. during movie mode)
+     */
+    async setFocusBracketingDepthComposition(value: CanonEnableDisable): Promise<{ value: string }> {
+        const endpoint = this.getFeatureUrl('shooting/settings/focusbracketing/depthcomposite');
+
+        if (!endpoint) {
+            throw new Error('Focus bracketing depth composition feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    value,
+                }),
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(
+                    error.message || `Failed to set focus bracketing depth composition: ${response.status} ${response.statusText}`
+                );
+            }
+
+            return response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Failed to set focus bracketing depth composition');
+        }
+    }
+
+    /**
+     * Set the AF frame information.
+     * 
+     * @returns Object containing AF frame information including the number of AF frames, 
+     *          details of each AF frame, and visible region information.
+     * @throws Error if:
+     * - Device is busy
+     * - Mode not supported (e.g. during live view or movie mode)
+     */
+    async setAfFramePosition(positionx: number, positiony: number): Promise<any> {
+        const endpoint = this.getFeatureUrl('shooting/liveview/afframeposition');
+
+        if (!endpoint) {
+            throw new Error('AF frame information feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    positionx,
+                    positiony,
+                }),
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(
+                    error.message || `Failed to get AF frame information: ${response.status} ${response.statusText}`
+                );
+            }
+
+            return response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('Failed to get AF frame information');
+        }
+    }
     private buildFeatureUrl(feature: ApiEndpoint) {
         const url = new URL(feature.path, this.baseUrl);
 

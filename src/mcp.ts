@@ -7,9 +7,21 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { exec } from 'child_process';
 
-import { Canon, CanonContentKind, CanonHDRMode, CanonJpegQuality, CanonLiveViewImageDetail, CanonRawQuality, CanonShootingMode, CanonShutterMode, CanonWhiteBalanceMode } from './Canon/Canon.js';
+import {
+    Canon,
+    CanonContentKind,
+    CanonEnableDisable,
+    CanonFlashMode,
+    CanonHDRMode,
+    CanonJpegQuality,
+    CanonLiveViewImageDetail,
+    CanonRawQuality,
+    CanonShootingMode,
+    CanonShutterMode,
+    CanonStillImageAspectRatio,
+    CanonWhiteBalanceMode,
+} from './Canon/Canon.js';
 import { startDockerStream, stopDockerStream } from './docker.js';
-
 
 const HTTPS = false;
 
@@ -57,37 +69,32 @@ server.tool(
     }
 );
 
-server.tool(
-    'take-photo',
-    'Take a photo with the camera using the current shooting settings.',
-    {},
-    async () => {
-        if (!canon) {
-            return {
-                content: [
-                    {
-                        type: 'text',
-                        text: 'Canon camera not connected. Please connect first.',
-                    },
-                ],
-                isError: true,
-            };
-        }
-        // await canon.getEventPolling();
-        const picture = await canon.takePhoto();
-        //const base64 = picture[0];
+server.tool('take-photo', 'Take a photo with the camera using the current shooting settings.', {}, async () => {
+    if (!canon) {
         return {
             content: [
                 {
                     type: 'text',
-                    // data: base64,
-                    // mimeType: "image/jpeg"
-                    text: JSON.stringify(picture),
+                    text: 'Canon camera not connected. Please connect first.',
                 },
             ],
+            isError: true,
         };
     }
-);
+    // await canon.getEventPolling();
+    const picture = await canon.takePhoto();
+    //const base64 = picture[0];
+    return {
+        content: [
+            {
+                type: 'text',
+                // data: base64,
+                // mimeType: "image/jpeg"
+                text: JSON.stringify(picture),
+            },
+        ],
+    };
+});
 
 server.tool(
     'get-shooting-settings',
@@ -499,9 +506,7 @@ server.tool(
         }
         if (!outputDir) {
             return {
-                content: [
-                    { type: 'text', text: 'Output directory not provided' }
-                ]
+                content: [{ type: 'text', text: 'Output directory not provided' }],
             };
         }
 
@@ -523,7 +528,6 @@ server.tool(
         const targetPath = path.join(outputDir, `${Date.now()}.JPG`);
         await saveImageToFile(lastPhoto, targetPath);
 
-        
         return {
             content: [
                 {
@@ -736,18 +740,22 @@ server.tool(
     }
 );
 
-server.tool('start-camera-livestream', 'Start livestream in a browser',  {
-    host: z.string(),
-    port: z.number().optional().default(8080),
-    https: z.boolean().optional().default(HTTPS),
-    username: z.string().optional(),
-    password: z.string().optional(),
-},
-async ({ host, port, https, username, password }) => {
-    const output = await startDockerStream(host, port, https, username, password);
+server.tool(
+    'start-camera-livestream',
+    'Start livestream in a browser',
+    {
+        host: z.string(),
+        port: z.number().optional().default(8080),
+        https: z.boolean().optional().default(HTTPS),
+        username: z.string().optional(),
+        password: z.string().optional(),
+    },
+    async ({ host, port, https, username, password }) => {
+        const output = await startDockerStream(host, port, https, username, password);
 
-    return { content: [{ type: 'text', text: output as string }] };
-});
+        return { content: [{ type: 'text', text: output as string }] };
+    }
+);
 
 server.tool('stop-camera-livestream', 'Stop livestream in a browser', {}, async () => {
     await stopDockerStream();
@@ -758,13 +766,13 @@ server.tool('get-aperture-increments', 'Get the aperture increments', {}, async 
     if (!canon) {
         return {
             content: [{ type: 'text', text: 'Get the aperture value level increment information.' }],
-            isError: true
+            isError: true,
         };
     }
 
     const apertureIncrements = await canon.getApertureIncrements();
     return {
-        content: [{ type: 'text', text: JSON.stringify(apertureIncrements) }]
+        content: [{ type: 'text', text: JSON.stringify(apertureIncrements) }],
     };
 });
 
@@ -772,13 +780,13 @@ server.tool('get-shutter-speed-increments', 'Get the shutter speed increments', 
     if (!canon) {
         return {
             content: [{ type: 'text', text: 'Get the shutter speed value level increment information.' }],
-            isError: true
+            isError: true,
         };
     }
 
     const shutterSpeedIncrements = await canon.getShutterSpeedIncrements();
     return {
-        content: [{ type: 'text', text: JSON.stringify(shutterSpeedIncrements) }]
+        content: [{ type: 'text', text: JSON.stringify(shutterSpeedIncrements) }],
     };
 });
 
@@ -786,13 +794,13 @@ server.tool('get-iso-speed-increments', 'Get the ISO speed increments', {}, asyn
     if (!canon) {
         return {
             content: [{ type: 'text', text: 'Get the ISO speed value level increment information.' }],
-            isError: true
+            isError: true,
         };
     }
 
     const isoSpeedIncrements = await canon.getIsoSpeedIncrements();
     return {
-        content: [{ type: 'text', text: JSON.stringify(isoSpeedIncrements) }]
+        content: [{ type: 'text', text: JSON.stringify(isoSpeedIncrements) }],
     };
 });
 
@@ -800,44 +808,168 @@ server.tool('get-jpeg-quality', 'Get the JPEG quality', {}, async () => {
     if (!canon) {
         return {
             content: [{ type: 'text', text: 'Get the JPEG quality value level information.' }],
-            isError: true
+            isError: true,
         };
     }
 
     const jpegQuality = await canon.getStillImageQuality();
     return {
-        content: [{ type: 'text', text: JSON.stringify(jpegQuality) }]
+        content: [{ type: 'text', text: JSON.stringify(jpegQuality) }],
     };
 });
 
-server.tool('set-jpeg-quality', 'Set the JPEG quality', {
-    jpeg: z.nativeEnum(CanonJpegQuality).describe('The value to set the JPEG quality to'),
-    raw: z.nativeEnum(CanonRawQuality).describe('The value to set the raw quality to'),
-}, async ({ jpeg, raw }) => {
-    const jpegQuality = await canon.setStillImageQuality({ jpeg, raw });
-    return { content: [{ type: 'text', text: JSON.stringify(jpegQuality) }] };
-});
+server.tool(
+    'set-jpeg-quality',
+    'Set the JPEG quality',
+    {
+        jpeg: z.nativeEnum(CanonJpegQuality).describe('The value to set the JPEG quality to'),
+        raw: z.nativeEnum(CanonRawQuality).describe('The value to set the raw quality to'),
+    },
+    async ({ jpeg, raw }) => {
+        const jpegQuality = await canon.setStillImageQuality({ jpeg, raw });
+        return { content: [{ type: 'text', text: JSON.stringify(jpegQuality) }] };
+    }
+);
 
-server.tool('get-content', 'Get content from the camera', {
-    path: z.string().describe('The path to the content to get'),
-    kind: z.nativeEnum(CanonContentKind).optional().describe('The kind of content to get'),
-}, async ({ path, kind }) => {
-    const content = await canon.getContent(path, kind);
-    return { content: [{ type: 'text', text: JSON.stringify(content) }] };
-});
+server.tool(
+    'get-content',
+    'Get content from the camera',
+    {
+        path: z.string().describe('The path to the content to get'),
+        kind: z.nativeEnum(CanonContentKind).optional().describe('The kind of content to get'),
+    },
+    async ({ path, kind }) => {
+        const content = await canon.getContent(path, kind);
+        return { content: [{ type: 'text', text: JSON.stringify(content) }] };
+    }
+);
 
 server.tool('get-hdr-settings', 'Get the HDR settings', {}, async () => {
     const hdrSettings = await canon.getHDRSettings();
     return { content: [{ type: 'text', text: JSON.stringify(hdrSettings) }] };
 });
 
-server.tool('set-hdr-settings', 'Set the HDR settings', {
-    value: z.nativeEnum(CanonHDRMode).describe('The value to set the HDR mode to'),
-}, async ({ value }) => {
-    const hdrSettings = await canon.setHDRSettings(value);
-    return { content: [{ type: 'text', text: JSON.stringify(hdrSettings) }] };
+server.tool(
+    'set-hdr-settings',
+    'Set the HDR settings',
+    {
+        value: z.nativeEnum(CanonHDRMode).describe('The value to set the HDR mode to'),
+    },
+    async ({ value }) => {
+        const hdrSettings = await canon.setHDRSettings(value);
+        return { content: [{ type: 'text', text: JSON.stringify(hdrSettings) }] };
+    }
+);
+
+server.tool('get-flash-setting', 'Get the flash setting', {}, async () => {
+    const flashSetting = await canon.getFlashSetting();
+    return { content: [{ type: 'text', text: JSON.stringify(flashSetting) }] };
 });
 
+server.tool(
+    'set-flash-setting',
+    'Set the flash setting',
+    {
+        value: z.nativeEnum(CanonFlashMode).describe('The value to set the flash mode to'),
+    },
+    async ({ value }) => {
+        const flashSetting = await canon.setFlashSetting(value);
+        return { content: [{ type: 'text', text: JSON.stringify(flashSetting) }] };
+    }
+);
+
+server.tool('get-still-image-aspect-ratio', 'Get the still image aspect ratio', {}, async () => {
+    const stillImageAspectRatio = await canon.getStillImageAspectRatio();
+    return { content: [{ type: 'text', text: JSON.stringify(stillImageAspectRatio) }] };
+});
+
+server.tool(
+    'set-still-image-aspect-ratio',
+    'Set the still image aspect ratio',
+    {
+        value: z.nativeEnum(CanonStillImageAspectRatio).describe('The value to set the still image aspect ratio to'),
+    },
+    async ({ value }) => {
+        const stillImageAspectRatio = await canon.setStillImageAspectRatio(value);
+        return { content: [{ type: 'text', text: JSON.stringify(stillImageAspectRatio) }] };
+    }
+);
+
+server.tool('get-focus-bracketing-settings', 'Get the focus bracketing settings', {}, async () => {
+    if (!canon) {
+        return {
+            content: [{ type: 'text', text: 'Get the focus bracketing settings.' }],
+            isError: true,
+        };
+    }
+
+    const [
+        focusBracketingStatus,
+        focusBracketingNumberOfShots,
+        focusBracketingFocusIncrement,
+        focusBracketingExposureSmoothing
+    ] = await Promise.all([
+        canon.getFocusBracketingStatus(),
+        canon.getFocusBracketingNumberOfShots(),
+        canon.getFocusBracketingFocusIncrement(),
+        canon.getFocusBracketingExposureSmoothing()
+    ]);
+
+    const focusBracketingSettings = {
+        status: focusBracketingStatus,
+        numberOfShots: focusBracketingNumberOfShots,
+        focusIncrement: focusBracketingFocusIncrement,
+        exposureSmoothing: focusBracketingExposureSmoothing,
+    };
+
+    return { content: [{ type: 'text', text: JSON.stringify(focusBracketingSettings) }] };
+});
+
+server.tool(
+    'set-focus-bracketing-status',
+    'Set the focus bracketing status',
+    {
+        status: z.enum(['enable', 'disable']).describe('The value to set the focus bracketing status to'),
+    },
+    async ({ status }) => {
+        const focusBracketingStatus = await canon.setFocusBracketingStatus(status);
+        return { content: [{ type: 'text', text: JSON.stringify(focusBracketingStatus) }] };
+    }
+);
+
+server.tool('set-focus-bracketing-number-of-shots', 'Set the focus bracketing number of shots', {
+    value: z.number().describe('The value to set the focus bracketing number of shots to. Accepts values between 2 and 999.'),
+}, async ({ value }) => {
+    const focusBracketingNumberOfShots = await canon.setFocusBracketingNumberOfShots(value);
+    return { content: [{ type: 'text', text: JSON.stringify(focusBracketingNumberOfShots) }] };
+});
+
+server.tool('set-focus-bracketing-focus-increment', 'Set the focus bracketing focus increment', {
+    value: z.number().describe('The value to set the focus bracketing focus increment to. Accepts values between 1 and 10.'),
+}, async ({ value }) => {
+    const focusBracketingFocusIncrement = await canon.setFocusBracketingFocusIncrement(value);
+    return { content: [{ type: 'text', text: JSON.stringify(focusBracketingFocusIncrement) }] };
+});
+
+server.tool('set-focus-bracketing-depth-composition', 'Set the focus bracketing depth composition', {
+    value: z.enum(['enable', 'disable']).describe('The value to set the focus bracketing depth composition to.'),
+}, async ({ value }) => {
+    const focusBracketingDepthComposition = await canon.setFocusBracketingDepthComposition(value);
+    return { content: [{ type: 'text', text: JSON.stringify(focusBracketingDepthComposition) }] };
+});
+
+server.tool('get-focus-bracketing-exposure-smoothing', 'Get the autofocus frame information', {}, async () => {
+    const focusBracketingExposureSmoothing = await canon.getFocusBracketingExposureSmoothing();
+    return { content: [{ type: 'text', text: JSON.stringify(focusBracketingExposureSmoothing) }] };
+});
+
+server.tool('get-autofocus-frame-position', 'Get the autofocus frame position', {
+    positionx: z.number().describe('The x position of the autofocus frame'),
+    positiony: z.number().describe('The y position of the autofocus frame'),
+}, async ({ positionx, positiony }) => {
+    const autofocusFramePosition = await canon.setAfFramePosition(positionx, positiony);
+    return { content: [{ type: 'text', text: JSON.stringify(autofocusFramePosition) }] };
+});
 
 
 async function main() {
