@@ -728,17 +728,17 @@ server.tool(
     }
 );
 
-server.tool(
-    'execute-autofocus',
-    'Execute autofocus. This API only issues a focusing instruction and does not return the focusing results. For the focusing results, check the focus frame information in the Live View incidental information.',
-    {
-        action: z.enum(['start', 'stop']).describe('The action to execute'),
-    },
-    async ({ action }) => {
-        const autofocus = await canon.executeAutofocus(action);
-        return { content: [{ type: 'text', text: JSON.stringify(autofocus) }] };
-    }
-);
+// server.tool(
+//     'execute-autofocus',
+//     'Execute autofocus. This API only issues a focusing instruction and does not return the focusing results. For the focusing results, check the focus frame information in the Live View incidental information.',
+//     {
+//         action: z.enum(['start', 'stop']).describe('The action to execute'),
+//     },
+//     async ({ action }) => {
+//         const autofocus = await canon.executeAutofocus(action);
+//         return { content: [{ type: 'text', text: JSON.stringify(autofocus) }] };
+//     }
+// );
 
 server.tool(
     'start-camera-livestream',
@@ -963,11 +963,12 @@ server.tool('get-focus-bracketing-exposure-smoothing', 'Get the autofocus frame 
     return { content: [{ type: 'text', text: JSON.stringify(focusBracketingExposureSmoothing) }] };
 });
 
-server.tool('get-autofocus-frame-position', 'Get the autofocus frame position', {
-    positionx: z.number().describe('The x position of the autofocus frame'),
-    positiony: z.number().describe('The y position of the autofocus frame'),
+server.tool('set-autofocus-frame-position', 'Set the autofocus frame position', {
+    positionx: z.number().describe('The relative horizontal position of the autofocus frame, expressed as a value between 0 and 1, where 0 represents the leftmost edge and 1 represents the rightmost edge of the available width.'),
+    positiony: z.number().describe('The relative vertical position of the autofocus frame, expressed as a value between 0 and 1, where 0 represents the topmost edge and 1 represents the bottommost edge of the available height.'),
 }, async ({ positionx, positiony }) => {
-    const autofocusFramePosition = await canon.setAfFramePosition(positionx, positiony);
+    const [width, height ] = [6000, 4000]
+    const autofocusFramePosition = await canon.setAfFramePosition(positionx * width, positiony * height);
     return { content: [{ type: 'text', text: JSON.stringify(autofocusFramePosition) }] };
 });
 
