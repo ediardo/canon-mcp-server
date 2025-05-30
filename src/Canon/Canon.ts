@@ -433,7 +433,7 @@ export enum CanonRawQuality {
 
 export enum CanonFlashMode {
     AUTO = 'auto',
-    ON = 'on', 
+    ON = 'on',
     SLOW_SYNCHRO = 'slowsynchro',
     OFF = 'off',
 }
@@ -449,13 +449,12 @@ export interface CanonConnectResult {
     lensInformation: CanonLensInformation;
 }
 
-
 export enum CanonStillImageAspectRatio {
     THREE_TWO = '3:2',
     X1_6 = 'x1.6',
     FOUR_THREE = '4:3',
     SIXTEEN_NINE = '16:9',
-    ONE_ONE = '1:1'
+    ONE_ONE = '1:1',
 }
 
 export type CanonEnableDisable = 'enable' | 'disable';
@@ -611,6 +610,76 @@ export class Canon extends Camera {
             }
 
             // If no full JPEG found, keep buffer and continue
+        }
+    }
+
+    /**
+     * Processes the multipart stream of JPEG images from the camera live view.
+     *
+     * @param stream ReadableStream<Uint8Array> - the stream from startLiveViewImageMultipart()
+     * @param onImage Callback function that receives each decoded JPEG image as Uint8Array
+     */
+    public static async processLiveViewImageMultipart(
+        stream: ReadableStream<Uint8Array>,
+        onImage: (data: Uint8Array) => Promise<void> | void
+    ): Promise<void> {
+        const reader = stream.getReader();
+        const decoder = new TextDecoder('utf-8');
+        const boundary = '--boundary';
+        let buffer = new Uint8Array();
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            // Append new data to the buffer
+            if (value) {
+                const newBuffer = new Uint8Array(buffer.length + value.length);
+                newBuffer.set(buffer);
+                newBuffer.set(value, buffer.length);
+                buffer = newBuffer;
+            }
+
+            while (true) {
+                const text = decoder.decode(buffer, { stream: true });
+
+                const boundaryIndex = text.indexOf(boundary);
+                if (boundaryIndex === -1) break;
+
+                const nextBoundaryIndex = text.indexOf(boundary, boundaryIndex + boundary.length);
+                if (nextBoundaryIndex === -1) break;
+
+                // Extract the multipart chunk
+                const chunkText = text.slice(boundaryIndex, nextBoundaryIndex);
+                const chunkStart = boundaryIndex;
+                const chunkEnd = nextBoundaryIndex;
+
+                const headersEnd = chunkText.indexOf('\r\n\r\n');
+                if (headersEnd === -1) break;
+
+                // Parse headers to find content-length
+                const headerSection = chunkText.slice(0, headersEnd);
+                const contentLengthMatch = headerSection.match(/Content-Length:\s*(\d+)/i);
+                if (!contentLengthMatch) break;
+
+                const contentLength = parseInt(contentLengthMatch[1]);
+                const contentStartIndex = text.indexOf('\r\n\r\n', boundaryIndex) + 4;
+
+                const binaryStart = buffer.indexOf(0xff, contentStartIndex); // JPEG start marker
+                const binaryEnd = binaryStart + contentLength;
+
+                if (binaryEnd > buffer.length) break;
+
+                const imageData = buffer.slice(binaryStart, binaryEnd);
+
+                try {
+                    await onImage(imageData);
+                } catch (e) {
+                    console.error('Error processing image chunk:', e);
+                }
+
+                buffer = buffer.slice(chunkEnd);
+            }
         }
     }
 
@@ -1225,14 +1294,14 @@ export class Canon extends Camera {
 
     /**
      * Get content from the camera
-     * 
+     *
      * Makes a GET request to /contents/[storage]/[directory]/[file] to retrieve content.
      * This API is unavailable while shooting, recording, movie mode, or get contents is in progress.
-     * 
+     *
      * @param path - Path to the content file on the camera (e.g. /card1/100CANON/IMG_0001.HIF)
      * @param kind - Optional content kind parameter:
      *   - main: Main data (Default when kind not specified)
-     *   - thumbnail: Thumbnail image 
+     *   - thumbnail: Thumbnail image
      *   - display: Display image
      *   - embedded: Embedded image (RAW only)
      *   - info: File information
@@ -1267,7 +1336,11 @@ export class Canon extends Camera {
                     case 416:
                         throw new Error('Requested range not satisfiable');
                     case 503:
-                        throw new Error(response.headers.get('Content-Type') === 'application/json' ? 'Device busy' : 'During shooting or recording');
+                        throw new Error(
+                            response.headers.get('Content-Type') === 'application/json'
+                                ? 'Device busy'
+                                : 'During shooting or recording'
+                        );
                     default:
                         throw new Error(`HTTP error! status: ${response.status}`);
                 }
@@ -1302,12 +1375,11 @@ export class Canon extends Camera {
         return blobs;
     }
 
-    
     /**
      * Get HDR (High Dynamic Range) settings from the camera
-     * 
+     *
      * Makes a GET request to /shooting/settings/hdr to retrieve current HDR value and available options
-     * 
+     *
      * @returns {Promise<{value: string, ability: string[]}>} Object containing:
      *   - value: Current HDR setting ('pq' or 'off')
      *   - ability: Array of available HDR options
@@ -1321,7 +1393,7 @@ export class Canon extends Camera {
      *   - Camera is shooting/recording
      *   - Mode not supported (e.g. in Movie mode on EOS-1D X Mark III)
      */
-    async getHDRSettings(): Promise<{value: string, ability: string[]}> {
+    async getHDRSettings(): Promise<{ value: string; ability: string[] }> {
         const endpoint = this.getFeatureUrl('shooting/settings/hdr');
 
         if (!endpoint) {
@@ -1341,12 +1413,11 @@ export class Canon extends Camera {
         return response.json();
     }
 
-
     /**
      * Set HDR (High Dynamic Range) settings on the camera
-     * 
+     *
      * Makes a PUT request to /shooting/settings/hdr to update the HDR setting
-     * 
+     *
      * @param {string} value - HDR setting value ('pq' or 'off'). Must be one of the values returned in ability array from getHDRSettings()
      * @returns {Promise<{value: string}>} Object containing the updated HDR value
      * Example response:
@@ -1359,7 +1430,7 @@ export class Canon extends Camera {
      *   - Camera is shooting/recording
      *   - Mode not supported (e.g. in Movie mode on EOS-1D X Mark III)
      */
-    async setHDRSettings(value: string): Promise<{value: string}> {
+    async setHDRSettings(value: string): Promise<{ value: string }> {
         const endpoint = this.getFeatureUrl('shooting/settings/hdr');
 
         if (!endpoint) {
@@ -1369,11 +1440,11 @@ export class Canon extends Camera {
         const response = await fetch(endpoint.path, {
             method: 'PUT',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                value
-            })
+                value,
+            }),
         });
 
         if (!response.ok) {
@@ -1410,7 +1481,10 @@ export class Canon extends Camera {
      * - Device busy (during shooting/recording)
      * - Mode not supported (e.g. cameradisplay=off in Movie mode)
      */
-    async startLiveView(liveViewSize: CanonLiveViewSize = CanonLiveViewSize.MEDIUM, cameraDisplay: string = 'keep'): Promise<object> {
+    async startLiveView(
+        liveViewSize: CanonLiveViewSize = CanonLiveViewSize.MEDIUM,
+        cameraDisplay: string = 'keep'
+    ): Promise<object> {
         const endpoint = this.getFeatureUrl('shooting/liveview');
 
         if (!endpoint) {
@@ -2559,6 +2633,71 @@ export class Canon extends Camera {
     }
 
     /**
+     * Starts transmission of the Live View image in multipart format.
+     *
+     * Makes a GET request to /shooting/liveview/multipart to start the Live View image transmission.
+     * If the Live View image cannot be sent due to reasons like the camera displaying the menu,
+     * a 160 x 120 size black image is sent. If the Live View image is not acquired immediately,
+     * this API should be executed again.
+     *
+     * @returns A Promise that resolves to a ReadableStream containing the chunked JPEG data
+     * @throws Error if:
+     * - Live View is not started
+     * - Device is busy
+     * - Live View already started
+     */
+    async startLiveViewImageMultipart(): Promise<ReadableStream<Uint8Array>> {
+        const endpoint = this.getFeatureUrl('shooting/liveview/multipart');
+        if (!endpoint) {
+            throw new Error('Live view multipart feature not supported');
+        }
+
+        const response = await fetch(endpoint.path, {
+            method: 'GET',
+            headers: { 'Content-Type': 'multipart/x-mixed-replace;boundary=boundary' },
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.message || 'Failed to start live view image multipart');
+        }
+
+        if (!response.body) {
+            throw new Error('No response body received');
+        }
+
+        return response.body;
+    }
+
+    /**
+     * Stops transmission of the Live View image in multipart format.
+     *
+     * Makes a DELETE request to /shooting/liveview/multipart to stop the Live View image transmission.
+     *
+     * @returns A Promise that resolves to an empty object on success
+     * @throws Error if:
+     * - Live View is not started
+     * - Device is busy
+     */
+    async stopLiveViewImageMultipart(): Promise<object> {
+        const endpoint = this.getFeatureUrl('shooting/liveview/multipart');
+        if (!endpoint) {
+            throw new Error('Live view multipart feature not supported');
+        }
+
+        const response = await fetch(endpoint.path, {
+            method: 'DELETE',
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.message || 'Failed to stop live view image multipart');
+        }
+
+        return response.json();
+    }
+
+    /**
      * Get the still image shooting quality settings
      *
      * Makes a GET request to /shooting/settings/stillimagequality to retrieve the current
@@ -2667,18 +2806,18 @@ export class Canon extends Camera {
 
     /**
      * Get the current still image aspect ratio setting and available options
-     * 
+     *
      * @returns {Promise<{
      *   value: string,
      *   ability: string[]
      * }>} Object containing current aspect ratio and available options
-     * 
+     *
      * @throws {Error} When:
      * - Feature not found
      * - Device is busy
      * - Mode not supported (e.g. during movie recording)
      */
-    async getStillImageAspectRatio(): Promise<{value: string, ability: string[]}> {
+    async getStillImageAspectRatio(): Promise<{ value: string; ability: string[] }> {
         const endpoint = this.getFeatureUrl('shooting/settings/stillimageaspectratio');
 
         if (!endpoint) {
@@ -2706,20 +2845,20 @@ export class Canon extends Camera {
 
     /**
      * Set the still image aspect ratio
-     * 
+     *
      * @param {string} value - Aspect ratio value ('3:2', '4:3', '16:9', '1:1', or 'x1.6')
-     * 
+     *
      * @returns {Promise<{
      *   value: string
      * }>} Object containing the updated aspect ratio setting
-     * 
+     *
      * @throws {Error} When:
      * - Feature not found
      * - Invalid parameters provided
      * - Device is busy
      * - Mode not supported (e.g. during movie recording)
      */
-    async setStillImageAspectRatio(value: string): Promise<{value: string}> {
+    async setStillImageAspectRatio(value: string): Promise<{ value: string }> {
         const endpoint = this.getFeatureUrl('shooting/settings/stillimageaspectratio');
 
         if (!endpoint) {
@@ -2755,18 +2894,18 @@ export class Canon extends Camera {
 
     /**
      * Get the current flash settings
-     * 
+     *
      * @returns {Promise<{
      *   value: string,
      *   ability: string[]
      * }>} Object containing current flash value and available options
-     * 
+     *
      * @throws {Error} When:
      * - Feature not found
      * - Device is busy
      * - Mode not supported (e.g. during movie recording)
      */
-    async getFlashSetting(): Promise<{value: string, ability: string[]}> {
+    async getFlashSetting(): Promise<{ value: string; ability: string[] }> {
         const endpoint = this.getFeatureUrl('shooting/settings/flash');
 
         if (!endpoint) {
@@ -2794,20 +2933,20 @@ export class Canon extends Camera {
 
     /**
      * Set the flash settings
-     * 
+     *
      * @param {string} value - Flash mode ('auto', 'on', 'slowsynchro', or 'off')
-     * 
+     *
      * @returns {Promise<{
      *   value: string
      * }>} Object containing the updated flash setting
-     * 
+     *
      * @throws {Error} When:
      * - Feature not found
      * - Invalid parameters provided
      * - Device is busy
      * - Mode not supported (e.g. during movie recording)
      */
-    async setFlashSetting(value: CanonFlashMode): Promise<{value: string}> {
+    async setFlashSetting(value: CanonFlashMode): Promise<{ value: string }> {
         const endpoint = this.getFeatureUrl('shooting/settings/flash');
 
         if (!endpoint) {
@@ -2857,7 +2996,7 @@ export class Canon extends Camera {
 
     /**
      * Get the current focus bracketing settings and available options
-     * 
+     *
      * @returns Object containing current value and available options
      * @throws Error if:
      * - Feature not supported
@@ -2865,7 +3004,7 @@ export class Canon extends Camera {
      * - During shooting/recording
      * - Mode not supported (e.g. during movie mode)
      */
-    async getFocusBracketingStatus(): Promise<{value: CanonEnableDisable, ability: string[]}> {
+    async getFocusBracketingStatus(): Promise<{ value: CanonEnableDisable; ability: string[] }> {
         const endpoint = this.getFeatureUrl('shooting/settings/focusbracketing');
 
         if (!endpoint) {
@@ -2883,7 +3022,8 @@ export class Canon extends Camera {
             if (!response.ok) {
                 const error = await response.json();
                 throw new Error(
-                    error.message || `Failed to get focus bracketing settings: ${response.status} ${response.statusText}`
+                    error.message ||
+                        `Failed to get focus bracketing settings: ${response.status} ${response.statusText}`
                 );
             }
 
@@ -2898,7 +3038,7 @@ export class Canon extends Camera {
 
     /**
      * Set the focus bracketing mode
-     * 
+     *
      * @param value - 'enable' or 'disable'
      * @returns Object containing the new value
      * @throws Error if:
@@ -2908,7 +3048,7 @@ export class Canon extends Camera {
      * - During shooting/recording
      * - Mode not supported (e.g. during movie mode)
      */
-    async setFocusBracketingStatus(value: CanonEnableDisable): Promise<{value: string}> {
+    async setFocusBracketingStatus(value: CanonEnableDisable): Promise<{ value: string }> {
         const endpoint = this.getFeatureUrl('shooting/settings/focusbracketing');
 
         if (!endpoint) {
@@ -2941,18 +3081,20 @@ export class Canon extends Camera {
             throw new Error('Failed to set focus bracketing');
         }
     }
-    
 
     /**
      * Get the current number of shots in focus bracketing setting.
-     * 
+     *
      * @returns Object containing the current value and ability range
      * @throws Error if:
      * - Device is busy
      * - During shooting/recording
      * - Mode not supported (e.g. during movie mode)
      */
-    async getFocusBracketingNumberOfShots(): Promise<{ value: number; ability: { min: number; max: number; step: number } }> {
+    async getFocusBracketingNumberOfShots(): Promise<{
+        value: number;
+        ability: { min: number; max: number; step: number };
+    }> {
         const endpoint = this.getFeatureUrl('shooting/settings/focusbracketing/numberofshots');
 
         if (!endpoint) {
@@ -2970,7 +3112,8 @@ export class Canon extends Camera {
             if (!response.ok) {
                 const error = await response.json();
                 throw new Error(
-                    error.message || `Failed to get focus bracketing number of shots: ${response.status} ${response.statusText}`
+                    error.message ||
+                        `Failed to get focus bracketing number of shots: ${response.status} ${response.statusText}`
                 );
             }
 
@@ -2985,7 +3128,7 @@ export class Canon extends Camera {
 
     /**
      * Set the number of shots in focus bracketing setting. Accepts values between 2 and 999.
-     * 
+     *
      * @param value - The number of shots to set
      * @returns Object containing the new value
      * @throws Error if:
@@ -3016,7 +3159,8 @@ export class Canon extends Camera {
             if (!response.ok) {
                 const error = await response.json();
                 throw new Error(
-                    error.message || `Failed to set focus bracketing number of shots: ${response.status} ${response.statusText}`
+                    error.message ||
+                        `Failed to set focus bracketing number of shots: ${response.status} ${response.statusText}`
                 );
             }
 
@@ -3031,14 +3175,17 @@ export class Canon extends Camera {
 
     /**
      * Get the current focus bracketing focus increment and its ability range, with a minimum of 1 and a maximum of 10.
-     * 
+     *
      * @returns Object containing the current value and ability range
      * @throws Error if:
      * - Device is busy
      * - During shooting/recording
      * - Mode not supported (e.g. during movie mode)
      */
-    async getFocusBracketingFocusIncrement(): Promise<{ value: number, ability: { min: number, max: number, step: number } }> {
+    async getFocusBracketingFocusIncrement(): Promise<{
+        value: number;
+        ability: { min: number; max: number; step: number };
+    }> {
         const endpoint = this.getFeatureUrl('shooting/settings/focusbracketing/focusincrement');
 
         if (!endpoint) {
@@ -3056,7 +3203,8 @@ export class Canon extends Camera {
             if (!response.ok) {
                 const error = await response.json();
                 throw new Error(
-                    error.message || `Failed to get focus bracketing focus increment: ${response.status} ${response.statusText}`
+                    error.message ||
+                        `Failed to get focus bracketing focus increment: ${response.status} ${response.statusText}`
                 );
             }
 
@@ -3071,7 +3219,7 @@ export class Canon extends Camera {
 
     /**
      * Set the focus bracketing focus increment. Accepts values between 1 and 10.
-     * 
+     *
      * @param value - The focus increment value to set
      * @returns Object containing the new value
      * @throws Error if:
@@ -3102,7 +3250,8 @@ export class Canon extends Camera {
             if (!response.ok) {
                 const error = await response.json();
                 throw new Error(
-                    error.message || `Failed to set focus bracketing focus increment: ${response.status} ${response.statusText}`
+                    error.message ||
+                        `Failed to set focus bracketing focus increment: ${response.status} ${response.statusText}`
                 );
             }
 
@@ -3117,14 +3266,14 @@ export class Canon extends Camera {
 
     /**
      * Get the current focus bracketing exposure smoothing setting and its abilities.
-     * 
+     *
      * @returns Object containing the current value and ability options
      * @throws Error if:
      * - Device is busy
      * - During shooting/recording
      * - Mode not supported (e.g. during movie mode)
      */
-    async getFocusBracketingExposureSmoothing(): Promise<{ value: string, ability: string[] }> {
+    async getFocusBracketingExposureSmoothing(): Promise<{ value: string; ability: string[] }> {
         const endpoint = this.getFeatureUrl('shooting/settings/focusbracketing/exposuresmoothing');
 
         if (!endpoint) {
@@ -3142,7 +3291,8 @@ export class Canon extends Camera {
             if (!response.ok) {
                 const error = await response.json();
                 throw new Error(
-                    error.message || `Failed to get focus bracketing exposure smoothing: ${response.status} ${response.statusText}`
+                    error.message ||
+                        `Failed to get focus bracketing exposure smoothing: ${response.status} ${response.statusText}`
                 );
             }
 
@@ -3157,7 +3307,7 @@ export class Canon extends Camera {
 
     /**
      * Set the focus bracketing exposure smoothing.
-     * 
+     *
      * @param value - The exposure smoothing value to set ('enable' or 'disable')
      * @returns Object containing the new value
      * @throws Error if:
@@ -3188,7 +3338,8 @@ export class Canon extends Camera {
             if (!response.ok) {
                 const error = await response.json();
                 throw new Error(
-                    error.message || `Failed to set focus bracketing exposure smoothing: ${response.status} ${response.statusText}`
+                    error.message ||
+                        `Failed to set focus bracketing exposure smoothing: ${response.status} ${response.statusText}`
                 );
             }
 
@@ -3201,10 +3352,9 @@ export class Canon extends Camera {
         }
     }
 
-
     /**
      * Get the current value and ability values of the Focus bracketing (depth composition).
-     * 
+     *
      * @returns Object containing the current value and ability values
      * @throws Error if:
      * - Device is busy
@@ -3229,7 +3379,8 @@ export class Canon extends Camera {
             if (!response.ok) {
                 const error = await response.json();
                 throw new Error(
-                    error.message || `Failed to get focus bracketing depth composition: ${response.status} ${response.statusText}`
+                    error.message ||
+                        `Failed to get focus bracketing depth composition: ${response.status} ${response.statusText}`
                 );
             }
 
@@ -3244,7 +3395,7 @@ export class Canon extends Camera {
 
     /**
      * Set the Focus bracketing (depth composition).
-     * 
+     *
      * @param value - The depth composition value to set ('enable' or 'disable')
      * @returns Object containing the new value
      * @throws Error if:
@@ -3275,7 +3426,8 @@ export class Canon extends Camera {
             if (!response.ok) {
                 const error = await response.json();
                 throw new Error(
-                    error.message || `Failed to set focus bracketing depth composition: ${response.status} ${response.statusText}`
+                    error.message ||
+                        `Failed to set focus bracketing depth composition: ${response.status} ${response.statusText}`
                 );
             }
 
@@ -3290,8 +3442,8 @@ export class Canon extends Camera {
 
     /**
      * Set the AF frame information.
-     * 
-     * @returns Object containing AF frame information including the number of AF frames, 
+     *
+     * @returns Object containing AF frame information including the number of AF frames,
      *          details of each AF frame, and visible region information.
      * @throws Error if:
      * - Device is busy
