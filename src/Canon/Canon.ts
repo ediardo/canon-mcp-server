@@ -390,10 +390,27 @@ export enum CanonLiveViewSize {
 }
 
 export enum CanonContentKind {
+    /**
+     * Main data (Default when kind is not designated)
+     */
     MAIN = 'main',
+    /**
+     * An Exif compliant small 160 x 120 pixel image.
+     */
     THUMBNAIL = 'thumbnail',
+    /**
+     * A short side 1080 pixel display image consisting of a Multi Picture
+     * Format (MPF) compliant display image embedded in a RAW image or
+     * a JPEG image.
+     */
     DISPLAY = 'display',
+    /**
+     * An L size equivalent JPEG image embedded in a RAW image.
+     */
     EMBEDDED = 'embedded',
+    /**
+     * File information
+     */
     INFO = 'info',
 }
 

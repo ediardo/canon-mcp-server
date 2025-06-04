@@ -46,10 +46,3 @@ export abstract class Camera {
      */
     abstract takePhoto(): Promise<any>;
 }
-
-export interface CameraImage {
-    image: string;
-    path: string;
-    filename: string;
-    info: CanonContentInfo;
-  }
