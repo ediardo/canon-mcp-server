@@ -7,7 +7,6 @@ import Canon, {
 } from './Canon/Canon.js';
 import { CanonLiveViewSize, CanonContentKind } from './Canon/Canon.js';
 import * as CameraErrors from './Error.js';
-import { CameraImage } from './Camera.js';
 
 export {
     Canon,
@@ -19,5 +18,4 @@ export {
     CanonShootingSettings,
     CanonConnectResult,
     CameraErrors,
-    CameraImage
 };

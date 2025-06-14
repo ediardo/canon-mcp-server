@@ -3500,10 +3500,87 @@ export class Canon extends Camera {
             throw new Error('Failed to get AF frame information');
         }
     }
+
+    
     private buildFeatureUrl(feature: ApiEndpoint) {
         const url = new URL(feature.path, this.baseUrl);
 
         return url.toString();
+    }
+
+    /**
+     * Get the exposure bracket (AEB) setting.
+     *
+     * Makes a GET request to /shooting/settings/aeb to retrieve the current exposure bracket value and available options.
+     *
+     * @returns {Promise<{ value: string; ability: string[] }>} Object containing current value and ability values
+     * @throws {Error} When device is busy, mode not supported, or feature not found
+     * Example response:
+     * {
+     *   "value": "+0.0",
+     *   "ability": ["+0.0", "+0_1/3", "+0_2/3", "+1.0", "+1_1/3", "+1_2/3", "+2.0"]
+     * }
+     */
+    async getExposureBracketSetting(): Promise<{ value: string; ability: string[] }> {
+        const endpoint = this.getFeatureUrl('shooting/settings/aeb');
+        if (!endpoint) {
+            throw new Error('Exposure bracket setting feature not found');
+        }
+        try {
+            const response = await fetch(endpoint.path);
+            if (!response.ok) {
+                if (response.status === 503) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Device busy or mode not supported');
+                }
+                throw new Error(`Failed to get exposure bracket setting: ${response.status} ${response.statusText}`);
+            }
+            return response.json();
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Set the exposure bracket (AEB) setting.
+     *
+     * Makes a PUT request to /shooting/settings/aeb to set the exposure bracket value.
+     *
+     * @param value - The exposure bracket value to set (e.g. "+0.0", "+1.0", etc)
+     * @returns {Promise<{ value: string }>} Object containing the new exposure bracket value
+     * @throws {Error} When invalid parameter, device is busy, or mode not supported
+     * Example response:
+     * {
+     *   "value": "+2.0"
+     * }
+     */
+    async setExposureBracketSetting(value: string): Promise<{ value: string }> {
+        const endpoint = this.getFeatureUrl('shooting/settings/aeb');
+        if (!endpoint) {
+            throw new Error('Exposure bracket setting feature not found');
+        }
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ value }),
+            });
+            if (!response.ok) {
+                const error = await response.json();
+                if (response.status === 400) {
+                    throw new Error(error.message || 'Invalid parameter');
+                }
+                if (response.status === 503) {
+                    throw new Error(error.message || 'Device busy or mode not supported');
+                }
+                throw new Error(error.message || `Failed to set exposure bracket setting: ${response.status} ${response.statusText}`);
+            }
+            return response.json();
+        } catch (error) {
+            throw error;
+        }
     }
 }
 

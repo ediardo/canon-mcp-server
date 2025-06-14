@@ -1,6 +1,3 @@
-import { CanonContentInfo } from "./Canon/Canon.js";
-
-
 /**
  * Abstract class for a camera.
  * 

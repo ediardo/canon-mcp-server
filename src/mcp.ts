@@ -972,6 +972,87 @@ server.tool('set-autofocus-frame-position', 'Set the autofocus frame position', 
     return { content: [{ type: 'text', text: JSON.stringify(autofocusFramePosition) }] };
 });
 
+server.tool(
+    'get-exposure-bracket-setting',
+    'Get the present value and ability values of the exposure bracket (AEB) setting.',
+    {},
+    async () => {
+        if (!canon) {
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: 'Canon camera not connected. Please connect first.',
+                    },
+                ],
+                isError: true,
+            };
+        }
+        try {
+            const aebSetting = await canon.getExposureBracketSetting();
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: JSON.stringify(aebSetting),
+                    },
+                ],
+            };
+        } catch (error: any) {
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: error.message || 'Failed to get exposure bracket setting.',
+                    },
+                ],
+                isError: true,
+            };
+        }
+    }
+);
+
+server.tool(
+    'set-exposure-bracket-setting',
+    'Set the exposure bracket (AEB) setting.',
+    {
+        value: z.string().describe('The exposure bracket value to set (e.g. "+0.0", "+1.0", etc).'),
+    },
+    async ({ value }) => {
+        if (!canon) {
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: 'Canon camera not connected. Please connect first.',
+                    },
+                ],
+                isError: true,
+            };
+        }
+        try {
+            const result = await canon.setExposureBracketSetting(value);
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: JSON.stringify(result),
+                    },
+                ],
+            };
+        } catch (error: any) {
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: error.message || 'Failed to set exposure bracket setting.',
+                    },
+                ],
+                isError: true,
+            };
+        }
+    }
+);
 
 async function main() {
     const transport = new StdioServerTransport();
