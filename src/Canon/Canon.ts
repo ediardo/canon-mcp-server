@@ -102,6 +102,11 @@ interface CanonLiveViewImageFlipDetail {
     image?: string;
 }
 
+interface CanonSetting {
+    value: string;
+    ability: string[];
+}
+
 interface CanonExposureCompensationSetting {
     value: string;
     ability: string[];
@@ -211,6 +216,22 @@ export interface CanonShootingSettings {
         ability: string[];
     };
     aeb?: {
+        value: string;
+        ability: string[];
+    };
+    focusbracketing?: {
+        value: string;
+        ability: string[];
+    };
+    focusbracketing_exposuresmoothing?: {
+        value: string;
+        ability: string[];
+    };
+    focusbracketing_focusincrement?: {
+        value: string;
+        ability: string[];
+    };
+    focusbracketing_numberofshots?: {
         value: string;
         ability: string[];
     };
@@ -3577,6 +3598,160 @@ export class Canon extends Camera {
                 }
                 throw new Error(error.message || `Failed to set exposure bracket setting: ${response.status} ${response.statusText}`);
             }
+            return response.json();
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Get the present value and ability values of the AF method setting.
+     *
+     * Makes a GET request to /shooting/settings/afmethod to retrieve the current AF method value and available options.
+     *
+     * @returns {Promise<{value: string, ability: string[]}>} Object containing current AF method value and available options.
+     * @throws {Error} When the device is busy or during shooting/recording.
+     */
+    async getAfMethodSetting(): Promise<{ value: string, ability: string[] }> {
+        const endpoint = this.getFeatureUrl('shooting/settings/afmethod');
+
+        if (!endpoint) {
+            throw new Error('AF method setting feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path, { method: 'GET', headers: { 'Content-Type': 'application/json' } });
+
+            if (!response.ok) {
+                const error = await response.json();
+                if (response.status === 503) {
+                    throw new Error(error.message || 'Device busy or during shooting/recording');
+                }
+                throw new Error(`Failed to get AF method setting: ${response.status} ${response.statusText}`);
+            }
+
+            return response.json();
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Set the AF method setting.
+     *
+     * Makes a PUT request to /shooting/settings/afmethod to change the AF method value.
+     *
+     * @param value - The AF method value to set (e.g. "face+tracking", "spot", etc).
+     * @returns {Promise<{ value: string }>} Object containing the new AF method value.
+     * @throws {Error} When invalid parameter, device is busy, or during shooting/recording.
+     */
+    async setAfMethodSetting(value: string): Promise<{ value: string }> {
+        const endpoint = this.getFeatureUrl('shooting/settings/afmethod');
+
+        if (!endpoint) {
+            throw new Error('AF method setting feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ value }),
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                if (response.status === 400) {
+                    throw new Error(error.message || 'Invalid parameter - value must be a valid AF method setting');
+                }
+                if (response.status === 503) {
+                    throw new Error(error.message || 'Device busy or during shooting/recording');
+                }
+                throw new Error(`Failed to set AF method setting: ${response.status} ${response.statusText}`);
+            }
+
+            return response.json();
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Get the current continuous shooting mode setting.
+     *
+     * Makes a GET request to /shooting/settings/drive to retrieve the current continuous shooting mode value and available options.
+     *
+     * @returns {Promise<{value: string, ability: string[]}>} Object containing current continuous shooting mode value and available options.
+     * @throws {Error} When:
+     * - Device is busy
+     * - Mode not supported
+     */
+    async getContinuousShootingMode(): Promise<{ value: string; ability: string[] }> {
+        const endpoint = this.getFeatureUrl('shooting/settings/drive');
+
+        if (!endpoint) {
+            throw new Error('Continuous shooting mode feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path, { method: 'GET', headers: { 'Content-Type': 'application/json' } });
+
+            if (!response.ok) {
+                if (response.status === 503) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Device busy or mode not supported');
+                }
+                throw new Error(`Failed to get continuous shooting mode: ${response.status} ${response.statusText}`);
+            }
+
+            return response.json();
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Set the continuous shooting mode setting.
+     *
+     * Makes a PUT request to /shooting/settings/drive to change the continuous shooting mode value.
+     *
+     * @param value - The continuous shooting mode value to set (e.g. "single", "highspeed", etc).
+     * @returns {Promise<{ value: string }>} Object containing the new continuous shooting mode value.
+     * @throws {Error} When:
+     * - Invalid parameter
+     * - Device is busy
+     * - During shooting/recording
+     * - Mode not supported
+     */
+    async setContinuousShootingMode(value: string): Promise<{ value: string }> {
+        const endpoint = this.getFeatureUrl('shooting/settings/drive');
+
+        if (!endpoint) {
+            throw new Error('Continuous shooting mode feature not found');
+        }
+
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ value }),
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                if (response.status === 400) {
+                    throw new Error(error.message || 'Invalid parameter - value must be a valid continuous shooting mode setting');
+                }
+                if (response.status === 503) {
+                    throw new Error(error.message || 'Device busy, during shooting/recording, or mode not supported');
+                }
+                throw new Error(`Failed to set continuous shooting mode: ${response.status} ${response.statusText}`);
+            }
+
             return response.json();
         } catch (error) {
             throw error;
