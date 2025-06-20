@@ -3757,6 +3757,165 @@ export class Canon extends Camera {
             throw error;
         }
     }
+
+    // Start Generation Here
+
+    /**
+     * Get the current color space setting.
+     *
+     * Makes a GET request to /shooting/settings/colorspace to retrieve the current color space value and available options.
+     *
+     * @returns {Promise<{ value: string; ability: string[] }>} Object containing current value and ability values
+     * @throws {Error} When device is busy, mode not supported, or feature not found
+     * Example response:
+     * {
+     *   "value": "srgb",
+     *   "ability": ["srgb", "adobe_rgb"]
+     * }
+     */
+    async getColorSpaceSetting(): Promise<{ value: string; ability: string[] }> {
+        const endpoint = this.getFeatureUrl('shooting/settings/colorspace');
+        if (!endpoint) {
+            throw new Error('Color space setting feature not found');
+        }
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+            if (!response.ok) {
+                if (response.status === 503) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Device busy or mode not supported');
+                }
+                throw new Error(`Failed to get color space setting: ${response.status} ${response.statusText}`);
+            }
+            return response.json();
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Set the color space setting.
+     *
+     * Makes a PUT request to /shooting/settings/colorspace to set the color space value.
+     *
+     * @param value - The color space value to set (e.g. "srgb", "adobe_rgb")
+     * @returns {Promise<{ value: string }>} Object containing the new color space value
+     * @throws {Error} When invalid parameter, device is busy, or mode not supported
+     * Example response:
+     * {
+     *   "value": "srgb"
+     * }
+     */
+    async setColorSpaceSetting(value: string): Promise<{ value: string }> {
+        const endpoint = this.getFeatureUrl('shooting/settings/colorspace');
+        if (!endpoint) {
+            throw new Error('Color space setting feature not found');
+        }
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ value }),
+            });
+            if (!response.ok) {
+                const error = await response.json();
+                if (response.status === 400) {
+                    throw new Error(error.message || 'Invalid parameter - value must be a valid color space setting');
+                }
+                if (response.status === 503) {
+                    throw new Error(error.message || 'Device busy, during shooting/recording, or mode not supported');
+                }
+                throw new Error(`Failed to set color space setting: ${response.status} ${response.statusText}`);
+            }
+            return response.json();
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Get the picture style kind setting.
+     *
+     * Makes a GET request to /shooting/settings/picturestyle to retrieve the current picture style value and available options.
+     *
+     * @returns {Promise<{ value: string; ability: string[] }>} Object containing current value and ability values
+     * @throws {Error} When device is busy, mode not supported, or feature not found
+     * Example response:
+     * {
+     *   "value": "auto",
+     *   "ability": ["auto", "standard", "portrait", "landscape", "finedetail", "neutral", "faithful", "monochrome", "userdef1", "userdef2", "userdef3"]
+     * }
+     */
+    async getPictureStyleSetting(): Promise<{ value: string; ability: string[] }> {
+        const endpoint = this.getFeatureUrl('shooting/settings/picturestyle');
+        if (!endpoint) {
+            throw new Error('Picture style setting feature not found');
+        }
+        try {
+            const response = await fetch(endpoint.path);
+            if (!response.ok) {
+                if (response.status === 503) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Device busy or mode not supported');
+                }
+                throw new Error(`Failed to get picture style setting: ${response.status} ${response.statusText}`);
+            }
+            return response.json();
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Set the picture style kind setting.
+     *
+     * Makes a PUT request to /shooting/settings/picturestyle to set the picture style value.
+     *
+     * @param value - The picture style value to set (e.g. "auto", "standard", "portrait", etc)
+     * @returns {Promise<{ value: string }>} Object containing the new picture style value
+     * @throws {Error} When invalid parameter, device is busy, or mode not supported
+     * Example response:
+     * {
+     *   "value": "auto"
+     * }
+     */
+    async setPictureStyleSetting(value: string): Promise<{ value: string }> {
+        const endpoint = this.getFeatureUrl('shooting/settings/picturestyle');
+        if (!endpoint) {
+            throw new Error('Picture style setting feature not found');
+        }
+        try {
+            const response = await fetch(endpoint.path, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ value }),
+            });
+            if (!response.ok) {
+                const error = await response.json();
+                if (response.status === 400) {
+                    throw new Error(error.message || 'Invalid parameter - value must be a valid picture style setting');
+                }
+                if (response.status === 503) {
+                    throw new Error(error.message || 'Device busy, during shooting/recording, or mode not supported');
+                }
+                throw new Error(`Failed to set picture style setting: ${response.status} ${response.statusText}`);
+            }
+            return response.json();
+        } catch (error) {
+            throw error;
+        }
+    }
+
+
 }
 
 export default Canon;
